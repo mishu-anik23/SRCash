@@ -4,7 +4,10 @@
     <option name="autoReloadType" value="SELECTIVE" />
   </component>
   <component name="ChangeListManager">
-    <list default="true" id="7bab4fb8-2681-46b4-afe7-b1559bd3963a" name="Changes" comment="Initial Project Folder Creation" />
+    <list default="true" id="7bab4fb8-2681-46b4-afe7-b1559bd3963a" name="Changes" comment="Add database.py for handling db tables and queries">
+      <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/ui_main.py" beforeDir="false" afterPath="$PROJECT_DIR$/ui_main.py" afterDir="false" />
+    </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
     <option name="HIGHLIGHT_NON_ACTIVE_CHANGELIST" value="false" />
@@ -13,6 +16,12 @@
   <component name="Git.Settings">
     <option name="RECENT_GIT_ROOT_PATH" value="$PROJECT_DIR$" />
   </component>
+  <component name="GitHubPullRequestSearchHistory"><![CDATA[{
+  "lastFilter": {
+    "state": "OPEN",
+    "assignee": "mishu-anik23"
+  }
+}]]></component>
   <component name="GithubPullRequestsUISettings"><![CDATA[{
   "selectedUrlAndAccountId": {
     "url": "https://github.com/mishu-anik23/SRCash.git",
@@ -30,7 +39,9 @@
   <component name="PropertiesComponent"><![CDATA[{
   "keyToString": {
     "ModuleVcsDetector.initialDetectionPerformed": "true",
+    "Python.ui_main.executor": "Run",
     "RunOnceActivity.ShowReadmeOnStart": "true",
+    "RunOnceActivity.TerminalTabsStorage.copyFrom.TerminalArrangementManager": "true",
     "RunOnceActivity.git.unshallow": "true",
     "git-widget-placeholder": "master"
   }
@@ -66,11 +77,38 @@
       <option name="project" value="LOCAL" />
       <updated>1753643129832</updated>
     </task>
-    <option name="localTasksCounter" value="3" />
+    <task id="LOCAL-00003" summary="Add Euro Notes and Coins in image folder">
+      <option name="closed" value="true" />
+      <created>1753643745313</created>
+      <option name="number" value="00003" />
+      <option name="presentableId" value="LOCAL-00003" />
+      <option name="project" value="LOCAL" />
+      <updated>1753643745313</updated>
+    </task>
+    <task id="LOCAL-00004" summary="Add Main UI window with required func">
+      <option name="closed" value="true" />
+      <created>1753643795179</created>
+      <option name="number" value="00004" />
+      <option name="presentableId" value="LOCAL-00004" />
+      <option name="project" value="LOCAL" />
+      <updated>1753643795179</updated>
+    </task>
+    <task id="LOCAL-00005" summary="Add database.py for handling db tables and queries">
+      <option name="closed" value="true" />
+      <created>1753643936046</created>
+      <option name="number" value="00005" />
+      <option name="presentableId" value="LOCAL-00005" />
+      <option name="project" value="LOCAL" />
+      <updated>1753643936046</updated>
+    </task>
+    <option name="localTasksCounter" value="6" />
     <servers />
   </component>
   <component name="VcsManagerConfiguration">
     <MESSAGE value="Initial Project Folder Creation" />
-    <option name="LAST_COMMIT_MESSAGE" value="Initial Project Folder Creation" />
+    <MESSAGE value="Add Euro Notes and Coins in image folder" />
+    <MESSAGE value="Add Main UI window with required func" />
+    <MESSAGE value="Add database.py for handling db tables and queries" />
+    <option name="LAST_COMMIT_MESSAGE" value="Add database.py for handling db tables and queries" />
   </component>
 </project>

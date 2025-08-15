@@ -14,6 +14,7 @@ from datetime import datetime
 class QuantityDialog(QDialog):
     def __init__(self, denomination, value, parent=None):
         super().__init__(parent)
+
         self.setWindowTitle(f"Enter Quantity for {denomination}")
         self.denomination = denomination
         self.value = value
@@ -155,9 +156,17 @@ class MainWindow(QMainWindow):
         scroll.setWidgetResizable(True)
         scroll.setWidget(grid_widget)
 
+        # 📅 Date Picker for Daily Cash Count
+        self.cash_count_date = QDateEdit()
+        self.cash_count_date.setCalendarPopup(True)
+        self.cash_count_date.setDate(QDate.currentDate())
+
         left_panel = QVBoxLayout()
+        left_panel.addWidget(QLabel("📅 Select Date for Cash Count"))
+        left_panel.addWidget(self.cash_count_date)
         left_panel.addWidget(QLabel("<b>Daily Cash Count</b>"))
         left_panel.addWidget(scroll)
+
 
         left_wrap = QWidget()
         left_wrap.setLayout(left_panel)
@@ -245,6 +254,44 @@ class MainWindow(QMainWindow):
         # Optional: populate the table on start
         self.load_cash_count_detail()
 
+    def update_coin_sum_in_summary(self, date_str):
+        """
+        Calculates the sum of all coins in daily_cash_count for the given date
+        and updates next_day_cash_coin column in daily_cash table.
+        """
+        # List of columns for coins (suffix "_total" is used for subtotals)
+        coin_columns = [
+            "euro2_total", "euro1_total", "cent50_total", "cent20_total", "cent10_total"
+        ]
+
+        # Build query
+        query = f"""
+            SELECT {', '.join(coin_columns)}
+            FROM daily_cash_count
+            WHERE date = ?
+        """
+        self.cursor.execute(query, (date_str,))
+        row = self.cursor.fetchone()
+        print(row)
+
+        if not row:
+            return  # no data for date
+
+        # Sum all coin totals
+        coin_sum = sum(v or 0 for v in row)
+
+        # Update in daily_cash table
+        self.cursor.execute("""
+            UPDATE daily_cash
+            SET next_day_cash_coin = ?
+            WHERE date = ?
+        """, (coin_sum, date_str))
+
+        self.conn.commit()
+
+        # Optionally, update the visible summary table if it’s loaded
+        #self.update_cash_summary()
+
     def open_quantity_dialog(self, name: str, value: float):
         dlg = QuantityDialog(name, value, self)
         if dlg.exec():
@@ -280,31 +327,66 @@ class MainWindow(QMainWindow):
                 QMessageBox.warning(self, "Error", f"Invalid denomination key: {denom_key}")
                 return
 
+            # 1. Get selected date
+            selected_date = self.cash_count_date.date().toString("yyyy-MM-dd")
+
+            # 2. Lookup existing row (or insert if not exists)
+            self.cursor.execute("SELECT id FROM daily_cash_count WHERE date = ?", (selected_date,))
+            row = self.cursor.fetchone()
+
+            if row:
+                self.today_cash_id = row[0]
+            else:
+                self.cursor.execute("INSERT INTO daily_cash_count (date, total_cash) VALUES (?, ?)",
+                                    (selected_date, 0.0))
+                self.conn.commit()
+                self.today_cash_id = self.cursor.lastrowid
+
             # Check for or create today's record
-            date_today = datetime.now().strftime("%Y-%m-%d")
-            if not self.today_cash_id:
-                self.cursor.execute("SELECT id FROM daily_cash_count WHERE date = ?", (date_today,))
-                row = self.cursor.fetchone()
-                if row:
-                    self.today_cash_id = row[0]
-                else:
-                    self.cursor.execute(
-                        "INSERT INTO daily_cash_count (date, total_cash) VALUES (?, ?)",
-                        (date_today, 0.0)
-                    )
-                    self.conn.commit()
-                    self.today_cash_id = self.cursor.lastrowid
+            #date_today = datetime.now().strftime("%Y-%m-%d")
+            #if not self.today_cash_id:
+                #self.cursor.execute("SELECT id FROM daily_cash_count WHERE date = ?", (date_today,))
+                #row = self.cursor.fetchone()
+               #if row:
+                   # self.today_cash_id = row[0]
+               # else:
+                   # self.cursor.execute(
+                       # "INSERT INTO daily_cash_count (date, total_cash) VALUES (?, ?)",
+                      #  (date_today, 0.0)
+                  #  )
+                  #  self.conn.commit()
+                  #  self.today_cash_id = self.cursor.lastrowid
+
+            # 3. Read existing qty & subtotal
+            self.cursor.execute(
+                f"SELECT {denom_key}_qty, {denom_key}_total FROM daily_cash_count WHERE id = ?",
+                (self.today_cash_id,)
+            )
+            result = self.cursor.fetchone()
+
+            existing_qty = result[0] if result[0] else 0
+            existing_subtotal = result[1] if result[1] else 0.0
+
+            new_qty = existing_qty + qty
+            new_subtotal = existing_subtotal + (qty * value)
+
+            # 4. Update with new values
+            self.cursor.execute(f"""
+                UPDATE daily_cash_count
+                SET {denom_key}_qty = ?, {denom_key}_total = ?
+                WHERE id = ?
+            """, (new_qty, new_subtotal, self.today_cash_id))
 
             # Update qty & total for the denomination
-            try:
-                self.cursor.execute(f"""
-                    UPDATE daily_cash_count
-                    SET {denom_key}_qty = ?, {denom_key}_total = ?
-                    WHERE id = ?
-                """, (qty, subtotal, self.today_cash_id))
-            except Exception as e:
-                QMessageBox.critical(self, "Database Error", f"Column error for {denom_key}: {str(e)}")
-                return
+           # try:
+              #  self.cursor.execute(f"""
+                #    UPDATE daily_cash_count
+               #     SET {denom_key}_qty = ?, {denom_key}_total = ?
+                #    WHERE id = ?
+            #    """, (qty, subtotal, self.today_cash_id))
+          #  except Exception as e:
+            #    QMessageBox.critical(self, "Database Error", f"Column error for {denom_key}: {str(e)}")
+              #  return
 
             # Recalculate total_cash
             self.cursor.execute("SELECT * FROM daily_cash_count WHERE id = ?", (self.today_cash_id,))
@@ -321,6 +403,7 @@ class MainWindow(QMainWindow):
                 (self.total_cash, self.today_cash_id)
             )
             self.conn.commit()
+            self.update_coin_sum_in_summary(selected_date)
 
             QMessageBox.information(self, "Saved", f"{name} updated. Total: €{self.total_cash:.2f}")
 
@@ -388,6 +471,8 @@ class MainWindow(QMainWindow):
     def show_stats(self, title, period):
         self.stats_window = StatsWindow(title, period)
         self.stats_window.show()
+
+
 
     def save_cash_summary(self):
         vals = [self.cash_summary_table.item(0, i).text() if self.cash_summary_table.item(0, i) else "" for i in range(10)]
@@ -482,6 +567,47 @@ class MainWindow(QMainWindow):
             QMessageBox.information(self, "Success", f"Summary exported to:\n{file_path}")
         except Exception as e:
             QMessageBox.critical(self, "Error", f"Failed to export Excel: {str(e)}")
+
+    def load_old_cash_data(self):
+        selected_date = self.cash_count_date.date().toString("yyyy-MM-dd")
+
+        # Load from daily_cash_count
+        self.cursor.execute("SELECT * FROM daily_cash_count WHERE date = ?", (selected_date,))
+        row = self.cursor.fetchone()
+
+        if not row:
+            QMessageBox.information(self, "Not Found", "No cash count data found for this date.")
+            return
+
+        columns = [desc[0] for desc in self.cursor.description]
+        row_dict = dict(zip(columns, row))
+        self.today_cash_id = row_dict["id"]
+
+        # Repopulate Cash Summary Table (assuming 1 row, 10 columns)
+        cash_fields = [
+            "daily_cash_count", "other_sell", "prev_day_cash", "total_cash_sell",
+            "total_card_sell", "total_daily_sell", "next_day_cash_note", "next_day_cash_coin",
+            "total_cash_taken", "cash_taken_by"
+        ]
+
+        self.cursor.execute("SELECT * FROM daily_cash WHERE date = ?", (selected_date,))
+        cash_row = self.cursor.fetchone()
+
+        if cash_row:
+            cash_cols = [desc[0] for desc in self.cursor.description]
+            cash_data = dict(zip(cash_cols, cash_row))
+
+            self.cash_management_table.setRowCount(1)
+            for col_idx, field in enumerate(cash_fields):
+                value = str(cash_data.get(field, ""))
+                self.cash_management_table.setItem(0, col_idx, QTableWidgetItem(value))
+        else:
+            # If no daily_cash row, clear it
+            self.cash_management_table.setRowCount(1)
+            for col in range(self.cash_management_table.columnCount()):
+                self.cash_management_table.setItem(0, col, QTableWidgetItem(""))
+
+        QMessageBox.information(self, "Loaded", f"Values loaded for {selected_date}.")
 
     def cancel_app(self):
         self.close()
