@@ -93,7 +93,7 @@ class MainWindow(QMainWindow):
             img_path = f"img/euro/{denom.replace('€','euro').replace('c','cent')}.png"
             pixmap = QPixmap(img_path)
             if not pixmap.isNull():
-                pixmap = pixmap.scaled(100, 70, Qt.AspectRatioMode.KeepAspectRatio)
+                pixmap = pixmap.scaled(200, 100, Qt.AspectRatioMode.KeepAspectRatio)
                 btn.setIcon(QIcon(pixmap))
                 btn.setIconSize(pixmap.size())
             else:
@@ -126,19 +126,27 @@ class MainWindow(QMainWindow):
 
         # Daily Expenses
         self.expenses_table = self._make_table(["Invoice", "Amount", "Status"])
-        right_layout.addWidget(QLabel("Daily Expenses"))
+        name_expense_table = QLabel("Daily Expenses")
+        name_expense_table.setStyleSheet("font-size: 16px; font-weight: bold; padding: 2px;")
+        #self.name_banner.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        #right_layout.addWidget(QLabel("Daily Expenses"))
+        right_layout.addWidget(name_expense_table)
         right_layout.addWidget(self.expenses_table)
         self._add_table_buttons(right_layout, self.save_expenses, self.cancel_expenses, self.add_expense_row)
 
         # Old Invoice
         self.old_invoice_table = self._make_table(["Date", "Invoice", "Amount"])
-        right_layout.addWidget(QLabel("Old Invoice Payment"))
+        name_old_invoice_table = QLabel("Old Invoice Payment")
+        name_old_invoice_table.setStyleSheet("font-size: 16px; font-weight: bold; padding: 2px;")
+        right_layout.addWidget(name_old_invoice_table)
         right_layout.addWidget(self.old_invoice_table)
         self._add_table_buttons(right_layout, self.save_old_invoices, self.cancel_old_invoices, self.add_old_invoice_row)
 
         # Bio Cash
         self.bio_cash_table = self._make_table(["Purpose", "Amount", "Vendor", "Sold By"])
-        right_layout.addWidget(QLabel("Bio Cash Update"))
+        name_bio_cash_table = QLabel("Bio Cash Update")
+        name_bio_cash_table.setStyleSheet("font-size: 16px; font-weight: bold; padding: 2px;")
+        right_layout.addWidget(name_bio_cash_table)
         right_layout.addWidget(self.bio_cash_table)
         self._add_table_buttons(right_layout, self.save_bio_cash, self.cancel_bio_cash, self.add_bio_cash_row)
 
@@ -148,7 +156,9 @@ class MainWindow(QMainWindow):
             "Next Day Cash Note", "Next Day Cash Coin",
             "Total Daily Sell", "Total Cash Taken", "Cash Taken By"
         ])
-        right_layout.addWidget(QLabel("Cash Summary"))
+        name_cash_summery_table = QLabel("Daily Cash Summary")
+        name_cash_summery_table.setStyleSheet("font-size: 16px; font-weight: bold; padding: 2px;")
+        right_layout.addWidget(name_cash_summery_table)
         right_layout.addWidget(self.cash_summary_table)
         self._add_table_buttons(right_layout, self.save_cash_summary, self.cancel_cash_summary, None)
 
@@ -169,7 +179,17 @@ class MainWindow(QMainWindow):
         splitter.setSizes([total_width // 3, (total_width * 2) // 3])
 
         # Add Show Stats button
-        btn_stats = QPushButton("Show Stats")
+        btn_stats = QPushButton("Show Statistics")
+        btn_stats.setStyleSheet("""
+                QPushButton {
+                    background-color: #445C69;
+                    font-weight: bold;
+                    font-size: 24px;
+                    color: white;
+                    padding: 10px;
+                    border-radius: 5px;
+                }
+            """)
         btn_stats.clicked.connect(self._open_stats)
 
         main_layout = QVBoxLayout()
@@ -243,13 +263,43 @@ class MainWindow(QMainWindow):
     def _add_table_buttons(self, layout, save_fn, cancel_fn, add_fn):
         btn_layout = QHBoxLayout()
         save_btn = QPushButton("Save")
+        save_btn.setStyleSheet("""
+                QPushButton {
+                    background-color: #3E5C38;
+                    font-weight: bold;
+                    font-size: 16px;
+                    color: white;
+                    padding: 5px;
+                    border-radius: 3px;
+                }
+            """)
         save_btn.clicked.connect(save_fn)
         cancel_btn = QPushButton("Cancel")
+        cancel_btn.setStyleSheet("""
+                QPushButton {
+                    background-color: #E3A032;
+                    font-weight: bold;
+                    font-size: 16px;
+                    color: white;
+                    padding: 5px;
+                    border-radius: 3px;
+                }
+            """)
         cancel_btn.clicked.connect(cancel_fn)
         btn_layout.addWidget(save_btn)
         btn_layout.addWidget(cancel_btn)
         if add_fn:
             add_btn = QPushButton("+")
+            add_btn.setStyleSheet("""
+                QPushButton {
+                    background-color: #535569;
+                    font-weight: bold;
+                    font-size: 16px;
+                    color: white;
+                    padding: 5px;
+                    border-radius: 3px;
+                }
+            """)
             add_btn.clicked.connect(add_fn)
             btn_layout.addWidget(add_btn)
         layout.addLayout(btn_layout)
