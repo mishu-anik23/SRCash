@@ -1,108 +1,54 @@
-import os
-from PyQt6.QtWidgets import (
-    QWidget, QVBoxLayout, QHBoxLayout, QLabel, QDateEdit,
-    QPushButton, QTableWidget, QTableWidgetItem, QFileDialog, QMessageBox
-)
+from PyQt6.QtWidgets import QWidget, QVBoxLayout, QLabel, QPushButton, QFileDialog, QDateEdit, QHBoxLayout, QTableWidget, QTableWidgetItem
 from PyQt6.QtCore import QDate
-from openpyxl import Workbook
+import pandas as pd
+from db_manager import DENOM_MAPPING
 
-from db_manager import DBManager, DENOM_MAPPING
-
-
-class StatsWindow(QWidget):
-    def __init__(self):
+class StatWindow(QWidget):
+    def __init__(self, db):
         super().__init__()
-        self.setWindowTitle("E-Cash Management - Statistics & Export")
-        self.resize(1200, 800)
+        self.db = db
+        self.setWindowTitle("Statistics")
+        self.resize(1000, 700)
 
-        self.db = DBManager()
-        self.init_ui()
-
-    def init_ui(self):
         layout = QVBoxLayout(self)
 
-        # Date range pickers
+        # Date pickers
         date_layout = QHBoxLayout()
+        self.start_date = QDateEdit(calendarPopup=True)
+        self.start_date.setDate(QDate.currentDate())
+        self.end_date = QDateEdit(calendarPopup=True)
+        self.end_date.setDate(QDate.currentDate())
         date_layout.addWidget(QLabel("From:"))
-        self.date_from = QDateEdit()
-        self.date_from.setCalendarPopup(True)
-        self.date_from.setDate(QDate.currentDate())
-        date_layout.addWidget(self.date_from)
-
+        date_layout.addWidget(self.start_date)
         date_layout.addWidget(QLabel("To:"))
-        self.date_to = QDateEdit()
-        self.date_to.setCalendarPopup(True)
-        self.date_to.setDate(QDate.currentDate())
-        date_layout.addWidget(self.date_to)
-
-        btn_load = QPushButton("Load Data")
-        btn_load.clicked.connect(self.load_data)
-        date_layout.addWidget(btn_load)
-
-        btn_export = QPushButton("Export to Excel")
-        btn_export.clicked.connect(self.export_to_excel)
-        date_layout.addWidget(btn_export)
-
+        date_layout.addWidget(self.end_date)
         layout.addLayout(date_layout)
 
-        # Table to display summary data
-        self.table = QTableWidget()
-        layout.addWidget(QLabel("Summary Data"))
-        layout.addWidget(self.table)
+        # Buttons
+        self.export_btn = QPushButton("Export Excel")
+        self.export_btn.clicked.connect(self.export_excel)
+        layout.addWidget(self.export_btn)
 
-    def load_data(self):
-        from_date = self.date_from.date().toString("yyyy-MM-dd")
-        to_date = self.date_to.date().toString("yyyy-MM-dd")
+        # Tables
+        self.summary_table = QTableWidget()
+        layout.addWidget(QLabel("Daily Cash Summary"))
+        layout.addWidget(self.summary_table)
 
-        query = """
-        SELECT * FROM daily_cash
-        WHERE date BETWEEN ? AND ?
-        ORDER BY date
-        """
-        data = self.db.cursor.execute(query, (from_date, to_date)).fetchall()
+        self.cash_count_table = QTableWidget()
+        layout.addWidget(QLabel("Daily Cash Count"))
+        layout.addWidget(self.cash_count_table)
 
-        if not data:
-            QMessageBox.information(self, "No Data", "No records found in this date range.")
-            return
+    def export_excel(self):
+        file, _ = QFileDialog.getSaveFileName(self, "Save Excel", "", "Excel Files (*.xlsx)")
+        if not file: return
 
-        headers = [desc[0] for desc in self.db.cursor.description]
-        self.table.setRowCount(len(data))
-        self.table.setColumnCount(len(headers))
-        self.table.setHorizontalHeaderLabels(headers)
+        # Fetch data from db
+        rows_summary = self.db.fetchall("SELECT * FROM daily_cash WHERE date BETWEEN ? AND ?", (self.start_date.date().toString("yyyy-MM-dd"), self.end_date.date().toString("yyyy-MM-dd")))
+        rows_count = self.db.fetchall("SELECT * FROM daily_cash_count WHERE date BETWEEN ? AND ?", (self.start_date.date().toString("yyyy-MM-dd"), self.end_date.date().toString("yyyy-MM-dd")))
 
-        for row_idx, row in enumerate(data):
-            for col_idx, value in enumerate(row):
-                self.table.setItem(row_idx, col_idx, QTableWidgetItem(str(value)))
+        df1 = pd.DataFrame(rows_summary, columns=[d[1] for d in self.db.cursor.execute("PRAGMA table_info(daily_cash)")])
+        df2 = pd.DataFrame(rows_count, columns=[d[1] for d in self.db.cursor.execute("PRAGMA table_info(daily_cash_count)")])
 
-    def export_to_excel(self):
-        if self.table.rowCount() == 0:
-            QMessageBox.warning(self, "No Data", "Please load data first.")
-            return
-
-        file_path, _ = QFileDialog.getSaveFileName(
-            self, "Save Excel File", "", "Excel Files (*.xlsx)"
-        )
-        if not file_path:
-            return
-
-        wb = Workbook()
-        ws = wb.active
-        ws.title = "Summary Data"
-
-        # Write headers
-        headers = [self.table.horizontalHeaderItem(i).text() for i in range(self.table.columnCount())]
-        ws.append(headers)
-
-        # Write rows
-        for row_idx in range(self.table.rowCount()):
-            row_data = []
-            for col_idx in range(self.table.columnCount()):
-                item = self.table.item(row_idx, col_idx)
-                row_data.append(item.text() if item else "")
-            ws.append(row_data)
-
-        try:
-            wb.save(file_path)
-            QMessageBox.information(self, "Success", f"Excel file saved at {file_path}")
-        except Exception as e:
-            QMessageBox.critical(self, "Error", f"Failed to save Excel file:\n{e}")
+        with pd.ExcelWriter(file) as writer:
+            df1.to_excel(writer, sheet_name="DailyCash", index=False)
+            df2.to_excel(writer, sheet_name="CashCount", index=False)

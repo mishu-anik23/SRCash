@@ -4,23 +4,11 @@
     <option name="autoReloadType" value="SELECTIVE" />
   </component>
   <component name="ChangeListManager">
-    <list default="true" id="7bab4fb8-2681-46b4-afe7-b1559bd3963a" name="Changes" comment="Add database.py for handling db tables and queries">
-      <change afterPath="$PROJECT_DIR$/db_manager.py" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/ui_stats.py" afterDir="false" />
+    <list default="true" id="7bab4fb8-2681-46b4-afe7-b1559bd3963a" name="Changes" comment="Change code structure to prod level with necessary safe check.">
       <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/ecash.db" beforeDir="false" afterPath="$PROJECT_DIR$/ecash.db" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/images/euro10.jpg" beforeDir="false" afterPath="$PROJECT_DIR$/img/euro/euro10.png" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/images/euro100.jpg" beforeDir="false" afterPath="$PROJECT_DIR$/img/euro/euro100.png" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/images/euro20.jpg" beforeDir="false" afterPath="$PROJECT_DIR$/img/euro/euro20.png" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/images/euro200.jpg" beforeDir="false" afterPath="$PROJECT_DIR$/img/euro/euro200.png" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/images/euro5.png" beforeDir="false" afterPath="$PROJECT_DIR$/img/euro/euro5.png" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/images/euro50.jpg" beforeDir="false" afterPath="$PROJECT_DIR$/img/euro/euro50.png" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/images/euroCoin1.png" beforeDir="false" afterPath="$PROJECT_DIR$/img/euro/euro1.png" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/images/euroCoin10Cent.jpg" beforeDir="false" afterPath="$PROJECT_DIR$/img/euro/10cent.png" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/images/euroCoin2.jpg" beforeDir="false" afterPath="$PROJECT_DIR$/img/euro/euro2.png" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/images/euroCoin20Cent.webp" beforeDir="false" afterPath="$PROJECT_DIR$/img/euro/20cent.png" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/images/euroCoin50Cent.png" beforeDir="false" afterPath="$PROJECT_DIR$/img/euro/50cent.png" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/ui_main.py" beforeDir="false" afterPath="$PROJECT_DIR$/ui_main.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/ui_stats.py" beforeDir="false" afterPath="$PROJECT_DIR$/ui_stats.py" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
@@ -37,7 +25,7 @@
   <component name="Git.Settings">
     <option name="RECENT_BRANCH_BY_REPOSITORY">
       <map>
-        <entry key="$PROJECT_DIR$" value="master-local" />
+        <entry key="$PROJECT_DIR$" value="local-prodv1" />
       </map>
     </option>
     <option name="RECENT_GIT_ROOT_PATH" value="$PROJECT_DIR$" />
@@ -62,20 +50,20 @@
     <option name="hideEmptyMiddlePackages" value="true" />
     <option name="showLibraryContents" value="true" />
   </component>
-  <component name="PropertiesComponent">{
-  &quot;keyToString&quot;: {
-    &quot;ModuleVcsDetector.initialDetectionPerformed&quot;: &quot;true&quot;,
-    &quot;Python.database.executor&quot;: &quot;Run&quot;,
-    &quot;Python.main.executor&quot;: &quot;Run&quot;,
-    &quot;Python.ui_main.executor&quot;: &quot;Run&quot;,
-    &quot;RunOnceActivity.ShowReadmeOnStart&quot;: &quot;true&quot;,
-    &quot;RunOnceActivity.TerminalTabsStorage.copyFrom.TerminalArrangementManager&quot;: &quot;true&quot;,
-    &quot;RunOnceActivity.git.unshallow&quot;: &quot;true&quot;,
-    &quot;git-widget-placeholder&quot;: &quot;local-prodv1&quot;,
-    &quot;last_opened_file_path&quot;: &quot;C:/Users/AM/PycharmProjects/SRCash/img/euro&quot;,
-    &quot;settings.editor.selected.configurable&quot;: &quot;com.jetbrains.python.configuration.PyActiveSdkModuleConfigurable&quot;
+  <component name="PropertiesComponent"><![CDATA[{
+  "keyToString": {
+    "ModuleVcsDetector.initialDetectionPerformed": "true",
+    "Python.database.executor": "Run",
+    "Python.main.executor": "Run",
+    "Python.ui_main.executor": "Run",
+    "RunOnceActivity.ShowReadmeOnStart": "true",
+    "RunOnceActivity.TerminalTabsStorage.copyFrom.TerminalArrangementManager": "true",
+    "RunOnceActivity.git.unshallow": "true",
+    "git-widget-placeholder": "local-prod-v2",
+    "last_opened_file_path": "C:/Users/AM/PycharmProjects/SRCash/img/euro",
+    "settings.editor.selected.configurable": "com.jetbrains.python.configuration.PyActiveSdkModuleConfigurable"
   }
-}</component>
+}]]></component>
   <component name="RecentsManager">
     <key name="CopyFile.RECENT_KEYS">
       <recent name="C:\Users\AM\PycharmProjects\SRCash\img\euro" />
@@ -154,9 +142,10 @@
     <recent_temporary>
       <list>
         <item itemvalue="Python.main" />
+        <item itemvalue="Python.ui_main" />
         <item itemvalue="Python.database" />
         <item itemvalue="Python.ui_main" />
-        <item itemvalue="Python.ui_main" />
+        <item itemvalue="Python.main" />
       </list>
     </recent_temporary>
   </component>
@@ -215,7 +204,15 @@
       <option name="project" value="LOCAL" />
       <updated>1753643936046</updated>
     </task>
-    <option name="localTasksCounter" value="6" />
+    <task id="LOCAL-00006" summary="Change code structure to prod level with necessary safe check.">
+      <option name="closed" value="true" />
+      <created>1755416334990</created>
+      <option name="number" value="00006" />
+      <option name="presentableId" value="LOCAL-00006" />
+      <option name="project" value="LOCAL" />
+      <updated>1755416334990</updated>
+    </task>
+    <option name="localTasksCounter" value="7" />
     <servers />
   </component>
   <component name="VcsManagerConfiguration">
@@ -223,6 +220,7 @@
     <MESSAGE value="Add Euro Notes and Coins in image folder" />
     <MESSAGE value="Add Main UI window with required func" />
     <MESSAGE value="Add database.py for handling db tables and queries" />
-    <option name="LAST_COMMIT_MESSAGE" value="Add database.py for handling db tables and queries" />
+    <MESSAGE value="Change code structure to prod level with necessary safe check." />
+    <option name="LAST_COMMIT_MESSAGE" value="Change code structure to prod level with necessary safe check." />
   </component>
 </project>

@@ -1,270 +1,250 @@
 import sys
-import os
-from datetime import datetime
 from PyQt6.QtWidgets import (
     QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
-    QPushButton, QTableWidget, QTableWidgetItem, QScrollArea, QLabel,
-    QDateEdit, QFileDialog, QMessageBox
+    QLabel, QTableWidget, QTableWidgetItem, QPushButton, QLineEdit,
+    QHeaderView, QScrollArea, QSplitter, QDateEdit, QDialog,
+    QMessageBox
 )
+from PyQt6.QtGui import QPixmap, QIcon, QIntValidator
 from PyQt6.QtCore import Qt, QDate
-from PyQt6.QtGui import QPixmap, QIcon
 
 from db_manager import DBManager, DENOM_MAPPING
+from ui_stats import StatWindow   # ✅ import statistics window
 
-# Image folder — adjust to your setup
-IMG_DIR = "img/euro"
+
+class QuantityDialog(QDialog):
+    def __init__(self, denom_name, denom_value, parent=None):
+        super().__init__(parent)
+        self.setWindowTitle(f"Enter Quantity - {denom_name}")
+        self.denom_name = denom_name
+        self.denom_value = denom_value
+        self.quantity = 0
+
+        layout = QVBoxLayout(self)
+        layout.addWidget(QLabel(f"Enter quantity for {denom_name}:"))
+
+        self.input = QLineEdit()
+        self.input.setPlaceholderText("0")
+        self.input.setValidator(QIntValidator(0, 10000, self))
+        layout.addWidget(self.input)
+
+        btn_layout = QHBoxLayout()
+        save_btn = QPushButton("Save")
+        save_btn.clicked.connect(self.accept)
+        cancel_btn = QPushButton("Cancel")
+        cancel_btn.clicked.connect(self.reject)
+        btn_layout.addWidget(save_btn)
+        btn_layout.addWidget(cancel_btn)
+        layout.addLayout(btn_layout)
+
+    def get_quantity(self):
+        try:
+            return int(self.input.text()) if self.input.text() else 0
+        except ValueError:
+            return 0
+
 
 class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
+        self.setWindowTitle("E-Cash Supermarket")
+        self.resize(1400, 800)
+
         self.db = DBManager()
-        self.setWindowTitle("E-Cash Management - Supermarket")
-        self.resize(1600, 900)
+        self.selected_date = QDate.currentDate().toString("yyyy-MM-dd")
 
-        self.selected_date = datetime.today().strftime("%Y-%m-%d")
-        self.init_ui()
+        self._init_ui()
 
-    def init_ui(self):
-        main_layout = QHBoxLayout()
+    def _init_ui(self):
+        # Left panel
+        left_layout = QVBoxLayout()
+
+        title = QLabel("Supermarket Name\n123 Market Street, City")
+        title.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        left_layout.addWidget(title)
+
+        # Date picker
+        date_layout = QHBoxLayout()
+        lbl = QLabel("Date:")
+        self.date_picker = QDateEdit()
+        self.date_picker.setDate(QDate.currentDate())
+        self.date_picker.setCalendarPopup(True)
+        self.date_picker.dateChanged.connect(self._on_date_changed)
+        date_layout.addWidget(lbl)
+        date_layout.addWidget(self.date_picker)
+        date_container = QWidget()
+        date_container.setLayout(date_layout)
+        left_layout.addWidget(date_container)
+
+        # Denominations grid (2-column layout inside scroll)
+        denom_layout = QVBoxLayout()
+        row_layout = QHBoxLayout()
+        for i, denom in enumerate(DENOM_MAPPING.keys()):
+            btn = QPushButton()
+            img_path = f"img/euro/{denom.replace('€','euro').replace('c','cent')}.png"
+            pixmap = QPixmap(img_path)
+            if not pixmap.isNull():
+                pixmap = pixmap.scaled(100, 70, Qt.AspectRatioMode.KeepAspectRatio)
+                btn.setIcon(QIcon(pixmap))
+                btn.setIconSize(pixmap.size())
+            else:
+                btn.setText(denom)
+            btn.clicked.connect(lambda _, d=denom: self._on_denom_click(d))
+            row_layout.addWidget(btn)
+
+            if (i + 1) % 2 == 0:
+                denom_layout.addLayout(row_layout)
+                row_layout = QHBoxLayout()
+        if row_layout.count() > 0:
+            denom_layout.addLayout(row_layout)
+
+        denom_container = QWidget()
+        denom_container.setLayout(denom_layout)
+        denom_scroll = QScrollArea()
+        denom_scroll.setWidgetResizable(True)
+        denom_scroll.setWidget(denom_container)
+        left_layout.addWidget(denom_scroll)
+
+        # Wrap left in scroll
+        left_container = QWidget()
+        left_container.setLayout(left_layout)
+        left_scroll = QScrollArea()
+        left_scroll.setWidgetResizable(True)
+        left_scroll.setWidget(left_container)
+
+        # Right panel (tables)
+        right_layout = QVBoxLayout()
+
+        # Daily Expenses
+        self.expenses_table = self._make_table(["Invoice", "Amount", "Status"])
+        right_layout.addWidget(QLabel("Daily Expenses"))
+        right_layout.addWidget(self.expenses_table)
+        self._add_table_buttons(right_layout, self.save_expenses, self.cancel_expenses, self.add_expense_row)
+
+        # Old Invoice
+        self.old_invoice_table = self._make_table(["Date", "Invoice", "Amount"])
+        right_layout.addWidget(QLabel("Old Invoice Payment"))
+        right_layout.addWidget(self.old_invoice_table)
+        self._add_table_buttons(right_layout, self.save_old_invoices, self.cancel_old_invoices, self.add_old_invoice_row)
+
+        # Bio Cash
+        self.bio_cash_table = self._make_table(["Purpose", "Amount", "Vendor", "Sold By"])
+        right_layout.addWidget(QLabel("Bio Cash Update"))
+        right_layout.addWidget(self.bio_cash_table)
+        self._add_table_buttons(right_layout, self.save_bio_cash, self.cancel_bio_cash, self.add_bio_cash_row)
+
+        # Cash Summary
+        self.cash_summary_table = self._make_table([
+            "Prev Day Cash", "Total Cash Sell", "Total Card Sell",
+            "Next Day Cash Note", "Next Day Cash Coin",
+            "Total Daily Sell", "Total Cash Taken", "Cash Taken By"
+        ])
+        right_layout.addWidget(QLabel("Cash Summary"))
+        right_layout.addWidget(self.cash_summary_table)
+        self._add_table_buttons(right_layout, self.save_cash_summary, self.cancel_cash_summary, None)
+
+        # Right scroll
+        right_container = QWidget()
+        right_container.setLayout(right_layout)
+        right_scroll = QScrollArea()
+        right_scroll.setWidgetResizable(True)
+        right_scroll.setWidget(right_container)
+
+        # Splitter
+        splitter = QSplitter(Qt.Orientation.Horizontal)
+        splitter.addWidget(left_scroll)
+        splitter.addWidget(right_scroll)
+
+        # Set left side ~1/3 and right side ~2/3
+        total_width = self.width()
+        splitter.setSizes([total_width // 3, (total_width * 2) // 3])
+
+        # Add Show Stats button
+        btn_stats = QPushButton("Show Stats")
+        btn_stats.clicked.connect(self._open_stats)
+
+        main_layout = QVBoxLayout()
+        main_layout.addWidget(splitter)
+        main_layout.addWidget(btn_stats, alignment=Qt.AlignmentFlag.AlignRight)
+
         container = QWidget()
         container.setLayout(main_layout)
         self.setCentralWidget(container)
 
-        # LEFT PANEL
-        left_panel = QVBoxLayout()
-
-        # Date picker
-        date_picker = QDateEdit()
-        date_picker.setDate(QDate.currentDate())
-        date_picker.setCalendarPopup(True)
-        date_picker.dateChanged.connect(self.on_date_changed)
-        left_panel.addWidget(QLabel("Select Date:"))
-        left_panel.addWidget(date_picker)
-
-        # Load Old Value Button
-        btn_load = QPushButton("Load Old Value")
-        btn_load.clicked.connect(self.load_old_value)
-        left_panel.addWidget(btn_load)
-
-        # Scroll area for denominations
-        scroll_area = QScrollArea()
-        scroll_area.setWidgetResizable(True)
-        scroll_widget = QWidget()
-        denom_layout = QHBoxLayout()
-        denom_layout.setSpacing(10)
-
-        col1 = QVBoxLayout()
-        col2 = QVBoxLayout()
-
-        for i, (display_name, (qty_col, total_col, value)) in enumerate(DENOM_MAPPING.items()):
-            img_path = os.path.join(IMG_DIR, f"{display_name.replace('€','euro').replace('c','cent')}.png")
-            #print(img_path)
-            btn = QPushButton()
-            btn.setFixedSize(100, 60)
-            if os.path.exists(img_path):
-                pixmap = QPixmap(img_path).scaled(120, 60, Qt.AspectRatioMode.KeepAspectRatio)
-                btn.setIcon(QIcon(pixmap))
-                btn.setIconSize(pixmap.size())
-            else:
-                btn.setText(display_name)
-            btn.clicked.connect(lambda checked, dn=display_name: self.open_quantity_dialog(dn))
-            if i % 2 == 0:
-                col1.addWidget(btn)
-            else:
-                col2.addWidget(btn)
-
-        denom_layout.addLayout(col1)
-        denom_layout.addLayout(col2)
-
-        scroll_widget.setLayout(denom_layout)
-        scroll_area.setWidget(scroll_widget)
-        left_panel.addWidget(scroll_area)
-
-        # Show Stats Button
-        btn_stats = QPushButton("Show Stats")
-        btn_stats.clicked.connect(self.show_stats_window)
-        left_panel.addWidget(btn_stats)
-
-        # Add left panel to main layout
-        main_layout.addLayout(left_panel, 1)
-
-        # RIGHT PANEL
-        right_panel = QVBoxLayout()
-
-        # Daily Expenses Table
-        self.expenses_table = self.create_table(["Invoice", "Amount", "Status"])
-        right_panel.addWidget(QLabel("Daily Expenses"))
-        right_panel.addWidget(self.expenses_table)
-        self.add_table_buttons(right_panel, self.expenses_table, self.save_expenses, self.delete_selected_row)
-
-        # Old Invoice Table
-        self.old_invoice_table = self.create_table(["Date", "Invoice", "Amount"])
-        right_panel.addWidget(QLabel("Old Invoice Payment"))
-        right_panel.addWidget(self.old_invoice_table)
-        self.add_table_buttons(right_panel, self.old_invoice_table, self.save_old_invoice, self.delete_selected_row)
-
-        # Bio Cash Table
-        self.bio_cash_table = self.create_table(["Purpose", "Amount", "Vendor", "Sold By"])
-        right_panel.addWidget(QLabel("Bio Cash Update"))
-        right_panel.addWidget(self.bio_cash_table)
-        self.add_table_buttons(right_panel, self.bio_cash_table, self.save_bio_cash, self.delete_selected_row)
-
-        main_layout.addLayout(right_panel, 3)
-
-    def create_table(self, headers):
-        table = QTableWidget(0, len(headers))
+    # --------- Helpers ---------
+    def _make_table(self, headers):
+        table = QTableWidget(1, len(headers))
         table.setHorizontalHeaderLabels(headers)
-        table.horizontalHeader().setStretchLastSection(True)
-        table.verticalHeader().setVisible(False)
+        table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
         return table
 
-    def add_table_buttons(self, layout, table, save_func, cancel_func):
+    def _add_table_buttons(self, layout, save_fn, cancel_fn, add_fn):
         btn_layout = QHBoxLayout()
-        btn_save = QPushButton("Save")
-        btn_save.clicked.connect(save_func)
-        btn_cancel = QPushButton("Cancel")
-        btn_cancel.clicked.connect(lambda: cancel_func(table))
-        btn_add = QPushButton("+")
-        btn_add.clicked.connect(lambda: table.insertRow(table.rowCount()))
-        btn_layout.addWidget(btn_save)
-        btn_layout.addWidget(btn_cancel)
-        btn_layout.addWidget(btn_add)
+        save_btn = QPushButton("Save")
+        save_btn.clicked.connect(save_fn)
+        cancel_btn = QPushButton("Cancel")
+        cancel_btn.clicked.connect(cancel_fn)
+        btn_layout.addWidget(save_btn)
+        btn_layout.addWidget(cancel_btn)
+        if add_fn:
+            add_btn = QPushButton("+")
+            add_btn.clicked.connect(add_fn)
+            btn_layout.addWidget(add_btn)
         layout.addLayout(btn_layout)
 
-    def open_quantity_dialog(self, denom_display: str):
-        """
-        Open a safe quantity input dialog for a denomination.
-        Validates input, updates DB, and recalculates total cash in real time.
-        """
-        from PyQt6.QtWidgets import QInputDialog, QMessageBox
+    # --------- Denomination click ---------
+    def _on_denom_click(self, denom):
+        qty_col, subtotal_col, denom_value = DENOM_MAPPING[denom]
+        dialog = QuantityDialog(denom, denom_value, self)
+        if dialog.exec():
+            qty = dialog.get_quantity()
+            self.db.upsert_denomination(self.selected_date, denom, qty)
 
-        # Make sure denomination is mapped
-        if denom_display not in DENOM_MAPPING:
-            QMessageBox.critical(self, "Error", f"Unknown denomination: {denom_display}")
-            return
+            dcc = self.db.fetchone("SELECT total_cash FROM daily_cash_count WHERE date = ?", (self.selected_date,))
+            total_cash = dcc[0] if dcc else 0
+            QMessageBox.information(self, "Saved", f"{denom}: {qty} saved.\nTotal Cash: €{total_cash}")
 
-        qty_col, total_col, value = DENOM_MAPPING[denom_display]
+            self._update_summary_auto()
 
-        # Ask for quantity
-        qty, ok = QInputDialog.getInt(
-            self,
-            "Enter Quantity",
-            f"Quantity for {denom_display}:",
-            0,  # default
-            0,  # min
-            10000  # max
-        )
+    # --------- Auto summary update ---------
+    def _update_summary_auto(self):
+        dcc = self.db.fetchone("SELECT total_cash FROM daily_cash_count WHERE date = ?", (self.selected_date,))
+        total_cash = dcc[0] if dcc else 0
+        coin_sum = self.db.fetchone("""
+            SELECT COALESCE(cent50_total,0)+COALESCE(cent20_total,0)+COALESCE(cent10_total,0)
+            FROM daily_cash_count WHERE date = ?
+        """, (self.selected_date,))
+        coin_sum = coin_sum[0] if coin_sum else 0
 
-        if not ok:
-            return  # user cancelled
+        self.cash_summary_table.setItem(0, 1, QTableWidgetItem(str(total_cash)))
+        self.cash_summary_table.setItem(0, 4, QTableWidgetItem(str(coin_sum)))
 
-        try:
-            # Calculate subtotal
-            subtotal = qty * value
-
-            # Save into DB
-            #self.db.cursor.execute(
-             #   f"""
-              #  INSERT INTO daily_cash_count (date, {qty_col}, {total_col}, total_cash)
-               # VALUES (?, ?, ?, ?)
-                #ON CONFLICT(date) DO UPDATE SET
-                 # {qty_col} = excluded.{qty_col},
-                  #{total_col} = excluded.{total_col},
-                  #total_cash = (
-                   # COALESCE(daily_cash_count.total_cash,0)
-                    #- COALESCE(daily_cash_count.{total_col},0)
-                    #+ excluded.{total_col}
-                 # )
-                #""",
-                #(self.selected_date, qty, subtotal, subtotal)
-            #)
-            self.db.upsert_denomination(self.selected_date, denom_display, qty)
-
-            self.db.conn.commit()
-
-            # Inform user
-            QMessageBox.information(
-                self,
-                "Saved",
-                f"{denom_display}: {qty} × {value} = {subtotal:.2f} saved for {self.selected_date}"
-            )
-
-        except Exception as e:
-            QMessageBox.critical(self, "Database Error", f"Failed to save {denom_display}:\n{e}")
-
-    def on_date_changed(self, qdate):
+    def _on_date_changed(self, qdate):
         self.selected_date = qdate.toString("yyyy-MM-dd")
 
-    def load_old_value(self):
-        data = self.db.fetch_daily_cash_count(self.selected_date)
-        if not data:
-            QMessageBox.warning(self, "Not Found", "No records found for selected date.")
-            return
-        QMessageBox.information(self, "Data Loaded", f"Loaded saved data for {self.selected_date}")
-
-    def delete_selected_row(self, table):
-        selected = table.currentRow()
-        if selected >= 0:
-            table.removeRow(selected)
-
-    def save_expenses(self):
-        for row in range(self.expenses_table.rowCount()):
-            inv_item = self.expenses_table.item(row, 0)
-            amt_item = self.expenses_table.item(row, 1)
-            status_item = self.expenses_table.item(row, 2)
-            if inv_item and amt_item and status_item:
-                try:
-                    amount = float(amt_item.text())
-                except (ValueError, AttributeError):
-                    continue
-                self.db.cursor.execute(
-                    "INSERT INTO daily_expenses (date, invoice, amount, status) VALUES (?, ?, ?, ?)",
-                    (self.selected_date, inv_item.text(), amount, status_item.text())
-                )
-        self.db.conn.commit()
-
-    def save_old_invoice(self):
-        for row in range(self.old_invoice_table.rowCount()):
-            date_item = self.old_invoice_table.item(row, 0)
-            inv_item = self.old_invoice_table.item(row, 1)
-            amt_item = self.old_invoice_table.item(row, 2)
-            if date_item and inv_item and amt_item:
-                try:
-                    amount = float(amt_item.text())
-                except (ValueError, AttributeError):
-                    continue
-                self.db.cursor.execute(
-                    "INSERT INTO old_invoice (date, invoice, amount) VALUES (?, ?, ?)",
-                    (date_item.text(), inv_item.text(), amount)
-                )
-        self.db.conn.commit()
-
-    def save_bio_cash(self):
-        for row in range(self.bio_cash_table.rowCount()):
-            purpose_item = self.bio_cash_table.item(row, 0)
-            amt_item = self.bio_cash_table.item(row, 1)
-            vendor_item = self.bio_cash_table.item(row, 2)
-            sold_by_item = self.bio_cash_table.item(row, 3)
-            if purpose_item and amt_item:
-                try:
-                    amount = float(amt_item.text())
-                except (ValueError, AttributeError):
-                    continue
-                self.db.cursor.execute(
-                    "INSERT INTO bio_cash (date, purpose, amount, vendor, sold_by) VALUES (?, ?, ?, ?, ?)",
-                    (self.selected_date, purpose_item.text(), amount,
-                     vendor_item.text() if vendor_item else "",
-                     sold_by_item.text() if sold_by_item else "")
-                )
-        self.db.conn.commit()
-
-    def show_stats_window(self):
-        from ui_stats import StatsWindow
-        self.stats_window = StatsWindow()
+    def _open_stats(self):
+        self.stats_window = StatWindow(self.db)
         self.stats_window.show()
+
+    # --------- Table actions (stubs for now) ---------
+    def save_expenses(self): pass
+    def cancel_expenses(self): pass
+    def add_expense_row(self): self.expenses_table.insertRow(self.expenses_table.rowCount())
+
+    def save_old_invoices(self): pass
+    def cancel_old_invoices(self): pass
+    def add_old_invoice_row(self): self.old_invoice_table.insertRow(self.old_invoice_table.rowCount())
+
+    def save_bio_cash(self): pass
+    def cancel_bio_cash(self): pass
+    def add_bio_cash_row(self): self.bio_cash_table.insertRow(self.bio_cash_table.rowCount())
+
+    def save_cash_summary(self): pass
+    def cancel_cash_summary(self): pass
+
 
 if __name__ == "__main__":
     app = QApplication(sys.argv)
-    win = MainWindow()
-    win.show()
+    w = MainWindow()
+    w.show()
     sys.exit(app.exec())
