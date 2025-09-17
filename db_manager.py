@@ -64,7 +64,7 @@ class DBManager:
         self.safe_execute("""CREATE TABLE IF NOT EXISTS daily_expenses (
                                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                                 date TEXT, invoice TEXT, amount REAL, status TEXT)""")
-        self.safe_execute("""CREATE TABLE IF NOT EXISTS old_invoice (
+        self.safe_execute("""CREATE TABLE IF NOT EXISTS old_invoices (
                                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                                 date TEXT, invoice TEXT, amount REAL)""")
         self.safe_execute("""CREATE TABLE IF NOT EXISTS bio_cash (
@@ -73,11 +73,12 @@ class DBManager:
         self.safe_execute("""CREATE TABLE IF NOT EXISTS daily_cash (
                                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                                 date TEXT,
-                                total_cash REAL DEFAULT 0,
+                                prev_day_cash REAL DEFAULT 0,
+                                total_cash_sell REAL DEFAULT 0,
                                 total_card_sell REAL DEFAULT 0,
-                                total_daily_sell REAL DEFAULT 0,
                                 next_day_cash_note REAL DEFAULT 0,
                                 next_day_cash_coin REAL DEFAULT 0,
+                                total_daily_sell REAL DEFAULT 0,
                                 total_cash_taken REAL DEFAULT 0,
                                 cash_taken_by TEXT)""")
 
@@ -94,6 +95,14 @@ class DBManager:
 
         # daily_cash: unique date for upsert on summary too
         self._ensure_column("daily_cash", "date", "TEXT")
+        self._ensure_column("daily_cash", "prev_day_cash", "REAL DEFAULT 0")
+        self._ensure_column("daily_cash", "total_cash_sell", "REAL DEFAULT 0")
+        self._ensure_column("daily_cash", "total_card_sell", "REAL DEFAULT 0")
+        self._ensure_column("daily_cash", "next_day_cash_note", "REAL DEFAULT 0")
+        self._ensure_column("daily_cash", "next_day_cash_coin", "REAL DEFAULT 0")
+        self._ensure_column("daily_cash", "total_daily_sell", "REAL DEFAULT 0")
+        self._ensure_column("daily_cash", "total_cash_taken", "REAL DEFAULT 0")
+        self._ensure_column("daily_cash", "cash_taken_by", "TEXT")
         self.safe_execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_dc_date ON daily_cash(date)")
 
     # ---------- business ops ----------

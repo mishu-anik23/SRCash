@@ -306,55 +306,80 @@ class MainWindow(QMainWindow):
 
     # --------- Denomination click ---------
     def _on_denom_click(self, denom):
-        qty_col, subtotal_col, denom_value = DENOM_MAPPING[denom]
-        dialog = QuantityDialog(denom, denom_value, self)
-        if dialog.exec():
-            qty = dialog.get_quantity()
-            self.db.upsert_denomination(self.selected_date, denom, qty)
+        try:
+            qty_col, subtotal_col, denom_value = DENOM_MAPPING[denom]
+            dialog = QuantityDialog(denom, denom_value, self)
+            if dialog.exec():
+                qty = dialog.get_quantity()
+                self.db.upsert_denomination(self.selected_date, denom, qty)
 
-            dcc = self.db.fetchone("SELECT total_cash FROM daily_cash_count WHERE date = ?", (self.selected_date,))
-            total_cash = dcc[0] if dcc else 0
-            QMessageBox.information(self, "Saved", f"{denom}: {qty} saved.\nTotal Cash: €{total_cash}")
+                dcc = self.db.fetchone("SELECT total_cash FROM daily_cash_count WHERE date = ?", (self.selected_date,))
+                total_cash = float(dcc[0]) if dcc and dcc[0] is not None else 0.0
+                QMessageBox.information(self, "Saved", f"{denom}: {qty} saved.\nTotal Cash: €{total_cash}")
 
-            self._update_summary_auto()
+                self._update_summary_auto()
+        except Exception as e:
+            QMessageBox.critical(self, "Error", f"Error saving denomination: {e}")
+            print(f"Error in _on_denom_click: {e}")
+            import traceback
+            traceback.print_exc()
 
     # --------- Auto summary update ---------
 
     def _update_summary_auto(self):
-        # 1. Total cash from notes/coins
-        dcc = self.db.fetchone("SELECT total_cash FROM daily_cash_count WHERE date = ?", (self.selected_date,))
-        total_cash = dcc[0] if dcc else 0
+        try:
+            # 1. Total cash from notes/coins
+            dcc = self.db.fetchone("SELECT total_cash FROM daily_cash_count WHERE date = ?", (self.selected_date,))
+            total_cash = float(dcc[0]) if dcc and dcc[0] is not None else 0.0
 
-        # 2. Prev day cash
-        prev_day_item = self.cash_summary_table.item(0, 0)
-        prev_day_cash = float(prev_day_item.text()) if prev_day_item else 0
+            # 2. Prev day cash
+            prev_day_item = self.cash_summary_table.item(0, 0)
+            prev_day_cash = 0.0
+            if prev_day_item and prev_day_item.text().strip():
+                try:
+                    prev_day_cash = float(prev_day_item.text())
+                except ValueError:
+                    prev_day_cash = 0.0
 
-        # 3. Expenses paid
-        exp_sum = \
-        self.db.fetchone("SELECT COALESCE(SUM(amount),0) FROM daily_expenses WHERE date=? AND status IN ('paid','p')",
-                         (self.selected_date,))[0]
+            # 3. Expenses paid
+            exp_result = self.db.fetchone("SELECT COALESCE(SUM(amount),0) FROM daily_expenses WHERE date=? AND status IN ('paid','p')",
+                                         (self.selected_date,))
+            exp_sum = float(exp_result[0]) if exp_result and exp_result[0] is not None else 0.0
 
-        # 4. Old invoices
-        old_sum = \
-        self.db.fetchone("SELECT COALESCE(SUM(amount),0) FROM old_invoices WHERE date=?", (self.selected_date,))[0]
+            # 4. Old invoices
+            old_result = self.db.fetchone("SELECT COALESCE(SUM(amount),0) FROM old_invoices WHERE date=?", (self.selected_date,))
+            old_sum = float(old_result[0]) if old_result and old_result[0] is not None else 0.0
 
-        # 5. Bio cash
-        #bio_sum = self.db.fetchone("SELECT COALESCE(SUM(amount),0) FROM bio_cash WHERE date=?", (self.selected_date,))[
-          #  0]
+            # 5. Bio cash
+            #bio_sum = self.db.fetchone("SELECT COALESCE(SUM(amount),0) FROM bio_cash WHERE date=?", (self.selected_date,))[
+              #  0]
 
-        # 6. Coins
-        coin_sum = self.db.fetchone("""
-               SELECT COALESCE(euro2_total,0)+COALESCE(euro1_total,0)+COALESCE(cent50_total,0)+COALESCE(cent20_total,0)+
-               COALESCE(cent10_total,0)
-               FROM daily_cash_count WHERE date = ?
-           """, (self.selected_date,))[0]
+            # 6. Coins
+            coin_result = self.db.fetchone("""
+                   SELECT COALESCE(euro2_total,0)+COALESCE(euro1_total,0)+COALESCE(cent50_total,0)+COALESCE(cent20_total,0)+
+                   COALESCE(cent10_total,0)
+                   FROM daily_cash_count WHERE date = ?
+               """, (self.selected_date,))
+            coin_sum = float(coin_result[0]) if coin_result and coin_result[0] is not None else 0.0
 
-        # Final calculations
-        total_cash_sell = total_cash - prev_day_cash - exp_sum - old_sum
+            # Final calculations
+            total_cash_sell = total_cash - prev_day_cash - exp_sum - old_sum
 
-        # Update table cells
-        self.cash_summary_table.setItem(0, 1, QTableWidgetItem(str(total_cash_sell)))
-        self.cash_summary_table.setItem(0, 4, QTableWidgetItem(str(coin_sum)))
+            # Update table cells - ensure table has enough rows
+            if self.cash_summary_table.rowCount() == 0:
+                self.cash_summary_table.insertRow(0)
+            
+            # Ensure we have the required columns
+            if self.cash_summary_table.columnCount() < 5:
+                return
+                
+            self.cash_summary_table.setItem(0, 1, self.make_cell(str(total_cash_sell)))
+            self.cash_summary_table.setItem(0, 4, self.make_cell(str(coin_sum)))
+            
+        except Exception as e:
+            print(f"Error in _update_summary_auto: {e}")
+            import traceback
+            traceback.print_exc()
 
     def _on_date_changed(self, qdate):
         self.selected_date = qdate.toString("yyyy-MM-dd")
@@ -365,17 +390,29 @@ class MainWindow(QMainWindow):
 
     # --------- Table actions (stubs for now) ---------
     def save_expenses(self):
-        for row in range(self.expenses_table.rowCount()):
-            invoice = self.expenses_table.item(row, 0)
-            amount = self.expenses_table.item(row, 1)
-            status = self.expenses_table.item(row, 2)
-            if invoice and amount and status:
-                self.db.safe_execute("""
-                     INSERT INTO daily_expenses (date, invoice, amount, status)
-                     VALUES (?, ?, ?, ?)
-                 """, (self.selected_date, invoice.text(), float(amount.text()), status.text()))
-        self.db.conn.commit()
-        self._update_summary_auto()
+        try:
+            for row in range(self.expenses_table.rowCount()):
+                invoice = self.expenses_table.item(row, 0)
+                amount = self.expenses_table.item(row, 1)
+                status = self.expenses_table.item(row, 2)
+                if invoice and amount and status and invoice.text().strip() and amount.text().strip():
+                    try:
+                        amount_value = float(amount.text())
+                        self.db.safe_execute("""
+                             INSERT INTO daily_expenses (date, invoice, amount, status)
+                             VALUES (?, ?, ?, ?)
+                         """, (self.selected_date, invoice.text().strip(), amount_value, status.text().strip()))
+                    except ValueError:
+                        QMessageBox.warning(self, "Invalid Amount", f"Invalid amount in row {row + 1}: {amount.text()}")
+                        return
+            self.db.conn.commit()
+            self._update_summary_auto()
+            QMessageBox.information(self, "Saved", "Expenses saved successfully!")
+        except Exception as e:
+            QMessageBox.critical(self, "Error", f"Error saving expenses: {e}")
+            print(f"Error in save_expenses: {e}")
+            import traceback
+            traceback.print_exc()
 
     def cancel_expenses(self):
         row = self.expenses_table.currentRow()
@@ -390,17 +427,29 @@ class MainWindow(QMainWindow):
         self.expenses_table.setItem(row, 2, self.make_cell("unpaid"))  # default status
 
     def save_old_invoices(self):
-        for row in range(self.old_invoice_table.rowCount()):
-            date_item = self.old_invoice_table.item(row, 0)
-            invoice = self.old_invoice_table.item(row, 1)
-            amount = self.old_invoice_table.item(row, 2)
-            if date_item and invoice and amount:
-                self.db.safe_execute("""
-                    INSERT INTO old_invoices (date, invoice, amount)
-                    VALUES (?, ?, ?)
-                """, (date_item.text(), invoice.text(), float(amount.text())))
-        self.db.conn.commit()
-        self._update_summary_auto()
+        try:
+            for row in range(self.old_invoice_table.rowCount()):
+                date_item = self.old_invoice_table.item(row, 0)
+                invoice = self.old_invoice_table.item(row, 1)
+                amount = self.old_invoice_table.item(row, 2)
+                if date_item and invoice and amount and date_item.text().strip() and invoice.text().strip() and amount.text().strip():
+                    try:
+                        amount_value = float(amount.text())
+                        self.db.safe_execute("""
+                            INSERT INTO old_invoices (date, invoice, amount)
+                            VALUES (?, ?, ?)
+                        """, (date_item.text().strip(), invoice.text().strip(), amount_value))
+                    except ValueError:
+                        QMessageBox.warning(self, "Invalid Amount", f"Invalid amount in row {row + 1}: {amount.text()}")
+                        return
+            self.db.conn.commit()
+            self._update_summary_auto()
+            QMessageBox.information(self, "Saved", "Old invoices saved successfully!")
+        except Exception as e:
+            QMessageBox.critical(self, "Error", f"Error saving old invoices: {e}")
+            print(f"Error in save_old_invoices: {e}")
+            import traceback
+            traceback.print_exc()
 
     def cancel_old_invoices(self):
         row = self.old_invoice_table.currentRow()
@@ -415,19 +464,31 @@ class MainWindow(QMainWindow):
         self.old_invoice_table.setItem(row, 2, self.make_cell(""))
 
     def save_bio_cash(self):
-        for row in range(self.bio_cash_table.rowCount()):
-            purpose = self.bio_cash_table.item(row, 0)
-            amount = self.bio_cash_table.item(row, 1)
-            vendor = self.bio_cash_table.item(row, 2)
-            sold_by = self.bio_cash_table.item(row, 3)
-            if purpose and amount:
-                self.db.safe_execute("""
-                    INSERT INTO bio_cash (date, purpose, amount, vendor, sold_by)
-                    VALUES (?, ?, ?, ?, ?)
-                """, (self.selected_date, purpose.text(), float(amount.text() or 0),
-                      vendor.text() if vendor else "", sold_by.text() if sold_by else ""))
-        self.db.conn.commit()
-        self._update_summary_auto()
+        try:
+            for row in range(self.bio_cash_table.rowCount()):
+                purpose = self.bio_cash_table.item(row, 0)
+                amount = self.bio_cash_table.item(row, 1)
+                vendor = self.bio_cash_table.item(row, 2)
+                sold_by = self.bio_cash_table.item(row, 3)
+                if purpose and amount and purpose.text().strip() and amount.text().strip():
+                    try:
+                        amount_value = float(amount.text())
+                        self.db.safe_execute("""
+                            INSERT INTO bio_cash (date, purpose, amount, vendor, sold_by)
+                            VALUES (?, ?, ?, ?, ?)
+                        """, (self.selected_date, purpose.text().strip(), amount_value,
+                              vendor.text().strip() if vendor else "", sold_by.text().strip() if sold_by else ""))
+                    except ValueError:
+                        QMessageBox.warning(self, "Invalid Amount", f"Invalid amount in row {row + 1}: {amount.text()}")
+                        return
+            self.db.conn.commit()
+            self._update_summary_auto()
+            QMessageBox.information(self, "Saved", "Bio cash saved successfully!")
+        except Exception as e:
+            QMessageBox.critical(self, "Error", f"Error saving bio cash: {e}")
+            print(f"Error in save_bio_cash: {e}")
+            import traceback
+            traceback.print_exc()
 
     def cancel_bio_cash(self):
         row = self.bio_cash_table.currentRow()
@@ -445,34 +506,53 @@ class MainWindow(QMainWindow):
 
 
     def save_cash_summary(self):
-        prev_day = self.cash_summary_table.item(0, 0)
-        total_cash_sell = self.cash_summary_table.item(0, 1)
-        total_card = self.cash_summary_table.item(0, 2)
-        next_day_note = self.cash_summary_table.item(0, 3)
-        next_day_coin = self.cash_summary_table.item(0, 4)
-        total_daily = self.cash_summary_table.item(0, 5)
-        total_taken = self.cash_summary_table.item(0, 6)
-        taken_by = self.cash_summary_table.item(0, 7)
+        try:
+            # Ensure we have at least one row
+            if self.cash_summary_table.rowCount() == 0:
+                self.cash_summary_table.insertRow(0)
+            
+            prev_day = self.cash_summary_table.item(0, 0)
+            total_cash_sell = self.cash_summary_table.item(0, 1)
+            total_card = self.cash_summary_table.item(0, 2)
+            next_day_note = self.cash_summary_table.item(0, 3)
+            next_day_coin = self.cash_summary_table.item(0, 4)
+            total_daily = self.cash_summary_table.item(0, 5)
+            total_taken = self.cash_summary_table.item(0, 6)
+            taken_by = self.cash_summary_table.item(0, 7)
 
-        self.db.safe_execute("""
-            INSERT OR REPLACE INTO daily_cash
-            (date, prev_day_cash, total_cash_sell, total_card_sell,
-             next_day_cash_note, next_day_cash_coin,
-             total_daily_sell, total_cash_taken, cash_taken_by)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-        """, (
-            self.selected_date,
-            float(prev_day.text()) if prev_day else 0,
-            float(total_cash_sell.text()) if total_cash_sell else 0,
-            float(total_card.text()) if total_card else 0,
-            float(next_day_note.text()) if next_day_note else 0,
-            float(next_day_coin.text()) if next_day_coin else 0,
-            float(total_daily.text()) if total_daily else 0,
-            float(total_taken.text()) if total_taken else 0,
-            taken_by.text() if taken_by else ""
-        ))
-        self.db.conn.commit()
-        QMessageBox.information(self, "Saved", "Cash Summary saved successfully!")
+            # Helper function to safely convert to float
+            def safe_float(item, default=0.0):
+                if item and item.text().strip():
+                    try:
+                        return float(item.text())
+                    except ValueError:
+                        return default
+                return default
+
+            self.db.safe_execute("""
+                INSERT OR REPLACE INTO daily_cash
+                (date, prev_day_cash, total_cash_sell, total_card_sell,
+                 next_day_cash_note, next_day_cash_coin,
+                 total_daily_sell, total_cash_taken, cash_taken_by)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """, (
+                self.selected_date,
+                safe_float(prev_day),
+                safe_float(total_cash_sell),
+                safe_float(total_card),
+                safe_float(next_day_note),
+                safe_float(next_day_coin),
+                safe_float(total_daily),
+                safe_float(total_taken),
+                taken_by.text().strip() if taken_by else ""
+            ))
+            self.db.conn.commit()
+            QMessageBox.information(self, "Saved", "Cash Summary saved successfully!")
+        except Exception as e:
+            QMessageBox.critical(self, "Error", f"Error saving cash summary: {e}")
+            print(f"Error in save_cash_summary: {e}")
+            import traceback
+            traceback.print_exc()
 
     def cancel_cash_summary(self):
         row = self.cash_summary_table.currentRow()
