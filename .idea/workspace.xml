@@ -6,17 +6,8 @@
   <component name="ChangeListManager">
     <list default="true" id="7bab4fb8-2681-46b4-afe7-b1559bd3963a" name="Changes" comment="Update code. add log, banner on left panel, modify table row frontend, on click func etc">
       <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/img/euro/10cent.png" beforeDir="false" afterPath="$PROJECT_DIR$/img/euro/10cent.png" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/img/euro/20cent.png" beforeDir="false" afterPath="$PROJECT_DIR$/img/euro/20cent.png" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/img/euro/50cent.png" beforeDir="false" afterPath="$PROJECT_DIR$/img/euro/50cent.png" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/img/euro/euro1.png" beforeDir="false" afterPath="$PROJECT_DIR$/img/euro/euro1.png" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/img/euro/euro10.png" beforeDir="false" afterPath="$PROJECT_DIR$/img/euro/euro10.png" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/img/euro/euro100.png" beforeDir="false" afterPath="$PROJECT_DIR$/img/euro/euro100.png" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/img/euro/euro2.png" beforeDir="false" afterPath="$PROJECT_DIR$/img/euro/euro2.png" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/img/euro/euro20.png" beforeDir="false" afterPath="$PROJECT_DIR$/img/euro/euro20.png" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/img/euro/euro200.png" beforeDir="false" afterPath="$PROJECT_DIR$/img/euro/euro200.png" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/img/euro/euro5.png" beforeDir="false" afterPath="$PROJECT_DIR$/img/euro/euro5.png" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/img/euro/euro50.png" beforeDir="false" afterPath="$PROJECT_DIR$/img/euro/euro50.png" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/db_manager.py" beforeDir="false" afterPath="$PROJECT_DIR$/db_manager.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/ecash.db" beforeDir="false" afterPath="$PROJECT_DIR$/ecash.db" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/ui_main.py" beforeDir="false" afterPath="$PROJECT_DIR$/ui_main.py" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
@@ -34,7 +25,7 @@
   <component name="Git.Settings">
     <option name="RECENT_BRANCH_BY_REPOSITORY">
       <map>
-        <entry key="$PROJECT_DIR$" value="local-prodv1" />
+        <entry key="$PROJECT_DIR$" value="local-prod-v2" />
       </map>
     </option>
     <option name="RECENT_GIT_ROOT_PATH" value="$PROJECT_DIR$" />
@@ -48,7 +39,7 @@
   <component name="GithubPullRequestsUISettings"><![CDATA[{
   "selectedUrlAndAccountId": {
     "url": "https://github.com/mishu-anik23/SRCash.git",
-    "accountId": "2a278d79-b678-40b1-b202-67cd49a2fc4d"
+    "accountId": "845c07f0-43bd-4f34-9afa-83efae94bbad"
   }
 }]]></component>
   <component name="ProjectColorInfo">{
@@ -161,7 +152,7 @@
   <component name="SharedIndexes">
     <attachedChunks>
       <set>
-        <option value="bundled-python-sdk-53e2683a6804-9cdd278e9d02-com.jetbrains.pycharm.community.sharedIndexes.bundled-PC-251.26094.141" />
+        <option value="bundled-python-sdk-4c141bd692a7-e2d783800521-com.jetbrains.pycharm.community.sharedIndexes.bundled-PC-251.26927.90" />
       </set>
     </attachedChunks>
   </component>
