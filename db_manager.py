@@ -69,12 +69,13 @@ class DBManager:
                                 date TEXT, invoice TEXT, amount REAL)""")
         self.safe_execute("""CREATE TABLE IF NOT EXISTS bio_cash (
                                 id INTEGER PRIMARY KEY AUTOINCREMENT,
-                                date TEXT, purpose TEXT, amount REAL, vendor TEXT, sold_by TEXT)""")
+                                date TEXT, purpose TEXT, amount REAL, vendor TEXT, sold_by TEXT, daily_cash_surplus REAL DEFAULT 0)""")
         self.safe_execute("""CREATE TABLE IF NOT EXISTS daily_cash (
                                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                                 date TEXT,
                                 prev_day_cash REAL DEFAULT 0,
                                 total_cash_sell REAL DEFAULT 0,
+                                terminal_cash REAL DEFAULT 0,
                                 total_card_sell REAL DEFAULT 0,
                                 next_day_cash_note REAL DEFAULT 0,
                                 next_day_cash_coin REAL DEFAULT 0,
@@ -97,6 +98,7 @@ class DBManager:
         self._ensure_column("daily_cash", "date", "TEXT")
         self._ensure_column("daily_cash", "prev_day_cash", "REAL DEFAULT 0")
         self._ensure_column("daily_cash", "total_cash_sell", "REAL DEFAULT 0")
+        self._ensure_column("daily_cash", "terminal_cash", "REAL DEFAULT 0")
         self._ensure_column("daily_cash", "total_card_sell", "REAL DEFAULT 0")
         self._ensure_column("daily_cash", "next_day_cash_note", "REAL DEFAULT 0")
         self._ensure_column("daily_cash", "next_day_cash_coin", "REAL DEFAULT 0")
@@ -104,6 +106,9 @@ class DBManager:
         self._ensure_column("daily_cash", "total_cash_taken", "REAL DEFAULT 0")
         self._ensure_column("daily_cash", "cash_taken_by", "TEXT")
         self.safe_execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_dc_date ON daily_cash(date)")
+        
+        # bio_cash: add daily_cash_surplus column
+        self._ensure_column("bio_cash", "daily_cash_surplus", "REAL DEFAULT 0")
 
     # ---------- business ops ----------
     def upsert_denomination(self, date_str: str, denom_display: str, qty: int):
@@ -170,6 +175,56 @@ class DBManager:
 
     def fetch_daily_cash(self, date_str: str):
         return self.fetchone("SELECT * FROM daily_cash WHERE date = ?", (date_str,))
+
+    def calculate_cash_surplus_and_total_daily_sell(self, date_str: str, terminal_cash: float, prev_day_cash: float, total_card_sell: float):
+        """Calculate cash surplus and total daily sell based on terminal cash and other values"""
+        try:
+            # Get current total cash sell from daily_cash_count
+            dcc = self.fetchone("SELECT total_cash FROM daily_cash_count WHERE date = ?", (date_str,))
+            total_cash_from_count = float(dcc[0]) if dcc and dcc[0] is not None else 0.0
+            
+            # Calculate daily surplus cash: total_cash_sell - prev_day_cash - terminal_cash
+            daily_surplus_cash = total_cash_from_count - prev_day_cash - terminal_cash
+            
+            # Calculate total daily sell: total_cash_sell + total_card_sell
+            total_daily_sell = total_cash_from_count + total_card_sell
+            
+            # Update bio_cash with daily_cash_surplus
+            # First, check if there's already a "Daily Cash Surplus" entry for this date
+            existing = self.fetchone("""
+                SELECT id FROM bio_cash WHERE date = ? AND purpose = 'Daily Cash Surplus'
+            """, (date_str,))
+            
+            if existing:
+                # Update existing entry
+                self.safe_execute("""
+                    UPDATE bio_cash SET amount = ?, daily_cash_surplus = ?
+                    WHERE date = ? AND purpose = 'Daily Cash Surplus'
+                """, (daily_surplus_cash, daily_surplus_cash, date_str))
+            else:
+                # Insert new entry
+                self.safe_execute("""
+                    INSERT INTO bio_cash (date, purpose, amount, daily_cash_surplus)
+                    VALUES (?, 'Daily Cash Surplus', ?, ?)
+                """, (date_str, daily_surplus_cash, daily_surplus_cash))
+            
+            # Update daily_cash with calculated values
+            self.safe_execute("""
+                INSERT INTO daily_cash (date, terminal_cash, total_daily_sell)
+                VALUES (?, ?, ?)
+                ON CONFLICT(date) DO UPDATE SET
+                    terminal_cash = excluded.terminal_cash,
+                    total_daily_sell = excluded.total_daily_sell
+            """, (date_str, terminal_cash, total_daily_sell))
+            
+            return {
+                'daily_surplus_cash': daily_surplus_cash,
+                'total_daily_sell': total_daily_sell
+            }
+            
+        except Exception as e:
+            print(f"Error in calculate_cash_surplus_and_total_daily_sell: {e}")
+            return None
 
     def close(self):
         self.conn.close()

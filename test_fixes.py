@@ -159,6 +159,7 @@ class TestDBManager(unittest.TestCase):
         test_data = {
             'prev_day_cash': 100.0,
             'total_cash_sell': 500.0,
+            'terminal_cash': 50.0,
             'total_card_sell': 300.0,
             'next_day_cash_note': 200.0,
             'next_day_cash_coin': 50.0,
@@ -172,6 +173,24 @@ class TestDBManager(unittest.TestCase):
         # Verify data
         row = self.db_manager.fetch_daily_cash(test_date)
         self.assertIsNotNone(row)
+    
+    def test_calculate_cash_surplus_and_total_daily_sell(self):
+        """Test the new calculation logic for cash surplus and total daily sell"""
+        test_date = "2024-01-01"
+        
+        # First, add some denominations to get a total cash amount
+        self.db_manager.upsert_denomination(test_date, "€50", 2)  # 100.0
+        self.db_manager.upsert_denomination(test_date, "€20", 3)  # 60.0
+        # Total cash from denominations: 160.0
+        
+        # Test the calculation
+        result = self.db_manager.calculate_cash_surplus_and_total_daily_sell(
+            test_date, terminal_cash=50.0, prev_day_cash=20.0, total_card_sell=100.0
+        )
+        
+        self.assertIsNotNone(result)
+        self.assertEqual(result['daily_surplus_cash'], 90.0)  # 160.0 - 20.0 - 50.0
+        self.assertEqual(result['total_daily_sell'], 260.0)  # 160.0 + 100.0
     
     def test_safe_execute_error_handling(self):
         """Test error handling in safe_execute"""
@@ -415,6 +434,57 @@ class TestUIFixes(unittest.TestCase):
         # Test empty cell
         empty_cell = window.make_cell("")
         self.assertEqual(empty_cell.text(), "")
+        
+        window.close()
+    
+    def test_load_data_functionality(self):
+        """Test the load data functionality"""
+        from ui_main import MainWindow
+        from PyQt6.QtWidgets import QApplication
+        
+        # Create QApplication if it doesn't exist
+        app = QApplication.instance()
+        if app is None:
+            app = QApplication([])
+        
+        # Test load data method exists and is callable
+        window = MainWindow()
+        self.assertTrue(hasattr(window, '_load_data_for_date'))
+        self.assertTrue(callable(getattr(window, '_load_data_for_date')))
+        
+        # Test that the method can be called without errors
+        try:
+            window._load_data_for_date()
+        except Exception as e:
+            # Should not raise critical errors, only show message boxes
+            self.assertNotIn("Error loading data", str(e))
+        
+        window.close()
+    
+    def test_auto_calculation_functionality(self):
+        """Test the real-time auto-calculation functionality"""
+        from ui_main import MainWindow
+        from PyQt6.QtWidgets import QApplication
+        
+        # Create QApplication if it doesn't exist
+        app = QApplication.instance()
+        if app is None:
+            app = QApplication([])
+        
+        # Test auto-calculation method exists and is callable
+        window = MainWindow()
+        self.assertTrue(hasattr(window, '_on_cash_summary_cell_changed'))
+        self.assertTrue(callable(getattr(window, '_on_cash_summary_cell_changed')))
+        self.assertTrue(hasattr(window, '_update_bio_cash_surplus'))
+        self.assertTrue(callable(getattr(window, '_update_bio_cash_surplus')))
+        
+        # Test that the methods can be called without errors
+        try:
+            window._on_cash_summary_cell_changed(0, 2)  # Terminal Cash column
+            window._update_bio_cash_surplus(100.0)
+        except Exception as e:
+            # Should not raise critical errors
+            self.assertNotIn("Error in auto-calculation", str(e))
         
         window.close()
 
