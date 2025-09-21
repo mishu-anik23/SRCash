@@ -424,6 +424,8 @@ class MainWindow(QMainWindow):
             total_cash_sell_item = self.cash_summary_table.item(0, 1)  # Total Cash Sell
             terminal_cash_item = self.cash_summary_table.item(0, 2)  # Terminal Cash
             total_card_sell_item = self.cash_summary_table.item(0, 3)  # Total Card Sell
+            next_day_note_item = self.cash_summary_table.item(0, 4)  # Next Day Cash Note
+            next_day_coin_item = self.cash_summary_table.item(0, 5)  # Next Day Cash Coin
             
             # Helper function to safely get float value
             def get_float_value(item, default=0.0):
@@ -439,17 +441,36 @@ class MainWindow(QMainWindow):
             total_cash_sell = get_float_value(total_cash_sell_item)
             terminal_cash = get_float_value(terminal_cash_item)
             total_card_sell = get_float_value(total_card_sell_item)
+            next_day_note = get_float_value(next_day_note_item)
+            next_day_coin = get_float_value(next_day_coin_item)
+
+            # If both next day note and coin are present, auto-populate Prev Day Cash = note + coin
+            # This runs when user edits either column 4 or 5
+            if column in (4, 5):
+                if (next_day_note_item and next_day_note_item.text().strip() != "") and \
+                   (next_day_coin_item and next_day_coin_item.text().strip() != ""):
+                    combined_prev = next_day_note + next_day_coin
+                    self._updating_cells = True
+                    self.cash_summary_table.setItem(0, 0, self.make_cell(f"{combined_prev:.2f}"))
+                    self._updating_cells = False
+                    prev_day_cash = combined_prev
             
             # Only calculate if we have the required values
             if total_cash_sell > 0:
                 # Calculate daily surplus cash: total_cash_sell - prev_day_cash - terminal_cash
                 daily_surplus_cash = total_cash_sell - prev_day_cash - terminal_cash
+
+                # Calculate current day cash sell: total_cash_sell - prev_day_cash
+                #cur_day_cash_sell = total_cash_sell - prev_day_cash
                 
                 # Calculate total daily sell: total_cash_sell + total_card_sell
-                total_daily_sell = total_cash_sell + total_card_sell
+                total_daily_sell = (total_cash_sell - prev_day_cash) + total_card_sell
                 
                 # Set flag to prevent infinite loops
                 self._updating_cells = True
+
+                # Update the Total Cash Sell cell (column 6) with actual daily cash
+                #self.cash_summary_table.setItem(0, 4, self.make_cell(f"{cur_day_cash_sell:.2f}"))
                 
                 # Update the Total Daily Sell cell (column 6)
                 self.cash_summary_table.setItem(0, 6, self.make_cell(f"{total_daily_sell:.2f}"))
