@@ -63,10 +63,19 @@ class DBManager:
         self.safe_execute("""CREATE TABLE IF NOT EXISTS daily_cash_count (id INTEGER PRIMARY KEY AUTOINCREMENT)""")
         self.safe_execute("""CREATE TABLE IF NOT EXISTS daily_expenses (
                                 id INTEGER PRIMARY KEY AUTOINCREMENT,
-                                date TEXT, invoice TEXT, amount REAL, status TEXT)""")
+                                date TEXT,
+                                invoice TEXT,
+                                amount REAL,
+                                status TEXT,
+                                cash_source TEXT,
+                                cash_source_date TEXT)""")
         self.safe_execute("""CREATE TABLE IF NOT EXISTS old_invoices (
                                 id INTEGER PRIMARY KEY AUTOINCREMENT,
-                                date TEXT, invoice TEXT, amount REAL)""")
+                                date TEXT,
+                                invoice TEXT,
+                                amount REAL,
+                                cash_source TEXT,
+                                cash_source_date TEXT)""")
         self.safe_execute("""CREATE TABLE IF NOT EXISTS bio_cash (
                                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                                 date TEXT, purpose TEXT, amount REAL, vendor TEXT, sold_by TEXT, daily_cash_surplus REAL DEFAULT 0)""")
@@ -109,6 +118,14 @@ class DBManager:
         
         # bio_cash: add daily_cash_surplus column
         self._ensure_column("bio_cash", "daily_cash_surplus", "REAL DEFAULT 0")
+
+        # daily_expenses: add cash source tracking
+        self._ensure_column("daily_expenses", "cash_source", "TEXT")
+        self._ensure_column("daily_expenses", "cash_source_date", "TEXT")
+
+        # old_invoices: add cash source tracking
+        self._ensure_column("old_invoices", "cash_source", "TEXT")
+        self._ensure_column("old_invoices", "cash_source_date", "TEXT")
 
     # ---------- business ops ----------
     def upsert_denomination(self, date_str: str, denom_display: str, qty: int):

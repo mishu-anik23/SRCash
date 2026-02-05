@@ -4,7 +4,7 @@ from PyQt6.QtWidgets import (
     QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
     QLabel, QTableWidget, QTableWidgetItem, QPushButton, QLineEdit,
     QHeaderView, QScrollArea, QSplitter, QDateEdit, QDialog,
-    QMessageBox
+    QMessageBox, QComboBox, QCalendarWidget, QDialogButtonBox
 )
 from PyQt6.QtGui import QPixmap, QIcon, QIntValidator, QColor
 from PyQt6.QtCore import Qt, QDate
@@ -126,7 +126,7 @@ class MainWindow(QMainWindow):
         right_layout = QVBoxLayout()
 
         # Daily Expenses
-        self.expenses_table = self._make_table(["Invoice", "Amount", "Status"])
+        self.expenses_table = self._make_table(["Invoice", "Amount", "Status", "Cash Source"])
         name_expense_table = QLabel("Daily Expenses")
         name_expense_table.setStyleSheet("font-size: 16px; font-weight: bold; padding: 2px;")
         #self.name_banner.setAlignment(Qt.AlignmentFlag.AlignCenter)
@@ -136,12 +136,16 @@ class MainWindow(QMainWindow):
         self._add_table_buttons(right_layout, self.save_expenses, self.cancel_expenses, self.add_expense_row)
 
         # Old Invoice
-        self.old_invoice_table = self._make_table(["Date", "Invoice", "Amount"])
+        self.old_invoice_table = self._make_table(["Date", "Invoice", "Amount", "Cash Source"])
         name_old_invoice_table = QLabel("Old Invoice Payment")
         name_old_invoice_table.setStyleSheet("font-size: 16px; font-weight: bold; padding: 2px;")
         right_layout.addWidget(name_old_invoice_table)
         right_layout.addWidget(self.old_invoice_table)
         self._add_table_buttons(right_layout, self.save_old_invoices, self.cancel_old_invoices, self.add_old_invoice_row)
+
+        # Initialize default Cash Source widgets for the first row of each table
+        self._setup_cash_source_cell(self.expenses_table, 0, 3)
+        self._setup_cash_source_cell(self.old_invoice_table, 0, 3)
 
         # Bio Cash
         self.bio_cash_table = self._make_table(["Purpose", "Amount", "Vendor", "Sold By", "Daily Cash Surplus"])
@@ -327,6 +331,69 @@ class MainWindow(QMainWindow):
             add_btn.clicked.connect(add_fn)
             btn_layout.addWidget(add_btn)
         layout.addLayout(btn_layout)
+
+    # --------- Cash Source helpers ---------
+    def _ask_old_cash_date(self):
+        """Show a calendar dialog and return selected date as yyyy-MM-dd, or None if cancelled."""
+        dialog = QDialog(self)
+        dialog.setWindowTitle("Select Old Cash Date")
+        layout = QVBoxLayout(dialog)
+
+        calendar = QCalendarWidget()
+        calendar.setSelectedDate(QDate.currentDate())
+        layout.addWidget(calendar)
+
+        buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel)
+        layout.addWidget(buttons)
+        buttons.accepted.connect(dialog.accept)
+        buttons.rejected.connect(dialog.reject)
+
+        if dialog.exec():
+            date = calendar.selectedDate()
+            return date.toString("yyyy-MM-dd")
+        return None
+
+    def _on_cash_source_changed(self, combo: QComboBox, index: int):
+        """Handle selection changes for the Cash Source combo box."""
+        # Index 0 -> Current Day, Index 1 -> Old Cash (requires date)
+        if index == 1:  # Old Cash selected
+            # Ask user for the old cash date
+            date_str = self._ask_old_cash_date()
+            if date_str:
+                combo.setProperty("cash_date", date_str)
+                combo.setItemText(1, f"Old Cash ({date_str})")
+            else:
+                # User cancelled date selection, revert to Current Day
+                combo.blockSignals(True)
+                combo.setCurrentIndex(0)
+                combo.blockSignals(False)
+                combo.setProperty("cash_date", None)
+                combo.setItemText(1, "Old Cash")
+        else:
+            # Reset to Current Day, clear any stored date
+            combo.setProperty("cash_date", None)
+            combo.setItemText(1, "Old Cash")
+
+    def _setup_cash_source_cell(self, table: QTableWidget, row: int, col: int,
+                                existing_source: str | None = None,
+                                existing_date: str | None = None):
+        """Create and attach a Cash Source combo box to the given cell."""
+        combo = QComboBox()
+        combo.addItem("Current Day")
+        combo.addItem("Old Cash")
+        combo.setProperty("cash_date", None)
+
+        # Restore previous value if provided
+        if existing_source == "Old Cash":
+            combo.setCurrentIndex(1)
+            if existing_date:
+                combo.setProperty("cash_date", existing_date)
+                combo.setItemText(1, f"Old Cash ({existing_date})")
+        else:
+            combo.setCurrentIndex(0)
+
+        combo.currentIndexChanged.connect(lambda idx, cb=combo: self._on_cash_source_changed(cb, idx))
+        table.setCellWidget(row, col, combo)
 
     # --------- Denomination click ---------
     def _on_denom_click(self, denom):
@@ -529,7 +596,7 @@ class MainWindow(QMainWindow):
             expenses_data = None
             try:
                 expenses_data = self.db.fetchall("""
-                    SELECT invoice, amount, status FROM daily_expenses 
+                    SELECT invoice, amount, status, cash_source, cash_source_date FROM daily_expenses 
                     WHERE date = ? ORDER BY id
                 """, (self.selected_date,))
             except:
@@ -545,32 +612,54 @@ class MainWindow(QMainWindow):
             if expenses_data:
                 has_data = True
                 self.expenses_table.setRowCount(len(expenses_data))
-                for row, (invoice, amount, status) in enumerate(expenses_data):
+                for row, data_row in enumerate(expenses_data):
+                    # Support both new (with cash source) and legacy (without) schemas
+                    if len(data_row) >= 5:
+                        invoice, amount, status, cash_source, cash_date = data_row
+                    else:
+                        invoice, amount, status = data_row
+                        cash_source, cash_date = "Current Day", None
+
                     self.expenses_table.setItem(row, 0, self.make_cell(invoice))
                     self.expenses_table.setItem(row, 1, self.make_cell(str(amount)))
                     self.expenses_table.setItem(row, 2, self.make_cell(status))
+                    # Ensure we have a Cash Source widget for this row
+                    self._setup_cash_source_cell(self.expenses_table, row, 3, cash_source, cash_date)
             else:
                 self.expenses_table.setRowCount(1)
                 for col in range(3):
                     self.expenses_table.setItem(0, col, self.make_cell(""))
+                # Default Cash Source for the initial empty row
+                self._setup_cash_source_cell(self.expenses_table, 0, 3)
             
             # Load Old Invoices
             old_invoices_data = self.db.fetchall("""
-                SELECT date, invoice, amount FROM old_invoices 
+                SELECT date, invoice, amount, cash_source, cash_source_date FROM old_invoices 
                 WHERE date = ? ORDER BY id
             """, (self.selected_date,))
             
             if old_invoices_data:
                 has_data = True
                 self.old_invoice_table.setRowCount(len(old_invoices_data))
-                for row, (date, invoice, amount) in enumerate(old_invoices_data):
+                for row, data_row in enumerate(old_invoices_data):
+                    # Support both new (with cash source) and legacy (without) schemas
+                    if len(data_row) >= 5:
+                        date, invoice, amount, cash_source, cash_date = data_row
+                    else:
+                        date, invoice, amount = data_row
+                        cash_source, cash_date = "Current Day", None
+
                     self.old_invoice_table.setItem(row, 0, self.make_cell(date))
                     self.old_invoice_table.setItem(row, 1, self.make_cell(invoice))
                     self.old_invoice_table.setItem(row, 2, self.make_cell(str(amount)))
+                    # Ensure we have a Cash Source widget for this row
+                    self._setup_cash_source_cell(self.old_invoice_table, row, 3, cash_source, cash_date)
             else:
                 self.old_invoice_table.setRowCount(1)
                 for col in range(3):
                     self.old_invoice_table.setItem(0, col, self.make_cell(""))
+                # Default Cash Source for the initial empty row
+                self._setup_cash_source_cell(self.old_invoice_table, 0, 3)
             
             # Load Bio Cash (try with date column first, fallback to without)
             bio_cash_data = None
@@ -671,13 +760,33 @@ class MainWindow(QMainWindow):
                 invoice = self.expenses_table.item(row, 0)
                 amount = self.expenses_table.item(row, 1)
                 status = self.expenses_table.item(row, 2)
+                cash_widget = self.expenses_table.cellWidget(row, 3)
+
                 if invoice and amount and status and invoice.text().strip() and amount.text().strip():
                     try:
                         amount_value = float(amount.text())
+                        # Determine cash source info
+                        if isinstance(cash_widget, QComboBox):
+                            source_type = "Old Cash" if cash_widget.currentIndex() == 1 else "Current Day"
+                            source_date = cash_widget.property("cash_date")
+                            if source_type == "Old Cash" and not source_date:
+                                # If user picked Old Cash but no date stored, fall back to current selected date
+                                source_date = self.selected_date
+                        else:
+                            source_type = "Current Day"
+                            source_date = None
+
                         self.db.safe_execute("""
-                             INSERT INTO daily_expenses (date, invoice, amount, status)
-                             VALUES (?, ?, ?, ?)
-                         """, (self.selected_date, invoice.text().strip(), amount_value, status.text().strip()))
+                             INSERT INTO daily_expenses (date, invoice, amount, status, cash_source, cash_source_date)
+                             VALUES (?, ?, ?, ?, ?, ?)
+                         """, (
+                             self.selected_date,
+                             invoice.text().strip(),
+                             amount_value,
+                             status.text().strip(),
+                             source_type,
+                             source_date if source_date else None
+                         ))
                     except ValueError:
                         QMessageBox.warning(self, "Invalid Amount", f"Invalid amount in row {row + 1}: {amount.text()}")
                         return
@@ -701,6 +810,8 @@ class MainWindow(QMainWindow):
         self.expenses_table.setItem(row, 0, self.make_cell(""))  # invoice
         self.expenses_table.setItem(row, 1, self.make_cell(""))  # amount
         self.expenses_table.setItem(row, 2, self.make_cell("unpaid"))  # default status
+        # Default Cash Source for new row
+        self._setup_cash_source_cell(self.expenses_table, row, 3)
 
     def save_old_invoices(self):
         try:
@@ -708,13 +819,32 @@ class MainWindow(QMainWindow):
                 date_item = self.old_invoice_table.item(row, 0)
                 invoice = self.old_invoice_table.item(row, 1)
                 amount = self.old_invoice_table.item(row, 2)
+                cash_widget = self.old_invoice_table.cellWidget(row, 3)
+
                 if date_item and invoice and amount and date_item.text().strip() and invoice.text().strip() and amount.text().strip():
                     try:
                         amount_value = float(amount.text())
+                        # Determine cash source info
+                        if isinstance(cash_widget, QComboBox):
+                            source_type = "Old Cash" if cash_widget.currentIndex() == 1 else "Current Day"
+                            source_date = cash_widget.property("cash_date")
+                            if source_type == "Old Cash" and not source_date:
+                                # If user picked Old Cash but no date stored, fall back to selected date in row/date column
+                                source_date = date_item.text().strip()
+                        else:
+                            source_type = "Current Day"
+                            source_date = None
+
                         self.db.safe_execute("""
-                            INSERT INTO old_invoices (date, invoice, amount)
-                            VALUES (?, ?, ?)
-                        """, (date_item.text().strip(), invoice.text().strip(), amount_value))
+                            INSERT INTO old_invoices (date, invoice, amount, cash_source, cash_source_date)
+                            VALUES (?, ?, ?, ?, ?)
+                        """, (
+                            date_item.text().strip(),
+                            invoice.text().strip(),
+                            amount_value,
+                            source_type,
+                            source_date if source_date else None
+                        ))
                     except ValueError:
                         QMessageBox.warning(self, "Invalid Amount", f"Invalid amount in row {row + 1}: {amount.text()}")
                         return
@@ -738,6 +868,8 @@ class MainWindow(QMainWindow):
         self.old_invoice_table.setItem(row, 0, self.make_cell(""))
         self.old_invoice_table.setItem(row, 1, self.make_cell(""))
         self.old_invoice_table.setItem(row, 2, self.make_cell(""))
+        # Default Cash Source for new row
+        self._setup_cash_source_cell(self.old_invoice_table, row, 3)
 
     def save_bio_cash(self):
         try:
