@@ -214,25 +214,6 @@ class DBManager:
             # Calculate total daily sell: total cash from cash count plus card sell
             total_daily_sell = total_cash_from_count + total_card_sell
             
-            # Update bio_cash with daily_cash_surplus
-            # First, check if there's already a "Daily Cash Surplus" entry for this date
-            existing = self.fetchone("""
-                SELECT id FROM bio_cash WHERE date = ? AND purpose = 'Daily Cash Surplus'
-            """, (date_str,))
-            
-            if existing:
-                # Update existing entry
-                self.safe_execute("""
-                    UPDATE bio_cash SET amount = ?, daily_cash_surplus = ?
-                    WHERE date = ? AND purpose = 'Daily Cash Surplus'
-                """, (daily_surplus_cash, daily_surplus_cash, date_str))
-            else:
-                # Insert new entry
-                self.safe_execute("""
-                    INSERT INTO bio_cash (date, purpose, amount, daily_cash_surplus)
-                    VALUES (?, 'Daily Cash Surplus', ?, ?)
-                """, (date_str, daily_surplus_cash, daily_surplus_cash))
-            
             # Update daily_cash with calculated values
             self.safe_execute("""
                 INSERT INTO daily_cash (date, terminal_cash, total_daily_sell)

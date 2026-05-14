@@ -148,7 +148,7 @@ class MainWindow(QMainWindow):
         self._setup_cash_source_cell(self.old_invoice_table, 0, 3)
 
         # Bio Cash
-        self.bio_cash_table = self._make_table(["Purpose", "Amount", "Vendor", "Sold By", "Daily Cash Surplus"])
+        self.bio_cash_table = self._make_table(["Purpose", "Amount", "Vendor", "Sold By", "Created At"])
         name_bio_cash_table = QLabel("Bio Cash Update")
         name_bio_cash_table.setStyleSheet("font-size: 16px; font-weight: bold; padding: 2px;")
         right_layout.addWidget(name_bio_cash_table)
@@ -543,9 +543,6 @@ class MainWindow(QMainWindow):
                 # Update the Total Daily Sell cell
                 self.cash_summary_table.setItem(0, 7, self.make_cell(f"{total_daily_sell:.2f}"))
                 
-                # Update bio cash table with daily surplus cash
-                self._update_bio_cash_surplus(daily_surplus_cash)
-                
                 # Reset flag
                 self._updating_cells = False
                 
@@ -662,18 +659,18 @@ class MainWindow(QMainWindow):
                 # Default Cash Source for the initial empty row
                 self._setup_cash_source_cell(self.old_invoice_table, 0, 3)
             
-            # Load Bio Cash (try with date column first, fallback to without)
+            # Load Bio Cash (exclude legacy Daily Cash Surplus rows and show created_at)
             bio_cash_data = None
             try:
                 bio_cash_data = self.db.fetchall("""
-                    SELECT purpose, amount, vendor, sold_by, daily_cash_surplus FROM bio_cash 
-                    WHERE date = ? ORDER BY id
+                    SELECT purpose, amount, vendor, sold_by, created_at FROM bio_cash
+                    WHERE date = ? AND purpose <> 'Daily Cash Surplus' ORDER BY id
                 """, (self.selected_date,))
             except:
-                # Fallback to original bio_cash table (without date filter)
+                # Fallback to original bio_cash table (without date or created_at)
                 try:
                     bio_cash_data = self.db.fetchall("""
-                        SELECT purpose, amount, vendor, sold_by FROM bio_cash 
+                        SELECT purpose, amount, vendor, sold_by FROM bio_cash
                         ORDER BY id
                     """)
                 except:
@@ -683,25 +680,31 @@ class MainWindow(QMainWindow):
                 has_data = True
                 self.bio_cash_table.setRowCount(len(bio_cash_data))
                 for row, data_row in enumerate(bio_cash_data):
-                    # Handle different column counts (with or without daily_cash_surplus)
-                    if len(data_row) >= 5:  # New schema with daily_cash_surplus
-                        purpose, amount, vendor, sold_by, surplus = data_row
+                    if len(data_row) >= 5:  # New schema with created_at
+                        purpose, amount, vendor, sold_by, created_at = data_row
                         self.bio_cash_table.setItem(row, 0, self.make_cell(purpose))
                         self.bio_cash_table.setItem(row, 1, self.make_cell(str(amount)))
                         self.bio_cash_table.setItem(row, 2, self.make_cell(vendor or ""))
                         self.bio_cash_table.setItem(row, 3, self.make_cell(sold_by or ""))
-                        self.bio_cash_table.setItem(row, 4, self.make_cell(str(surplus) if surplus else ""))
-                    else:  # Original schema without daily_cash_surplus
+                        created_item = self.make_cell(str(created_at) if created_at else "")
+                        created_item.setFlags(created_item.flags() & ~Qt.ItemFlag.ItemIsEditable)
+                        self.bio_cash_table.setItem(row, 4, created_item)
+                    else:  # Original schema without created_at
                         purpose, amount, vendor, sold_by = data_row
                         self.bio_cash_table.setItem(row, 0, self.make_cell(purpose))
                         self.bio_cash_table.setItem(row, 1, self.make_cell(str(amount)))
                         self.bio_cash_table.setItem(row, 2, self.make_cell(vendor or ""))
                         self.bio_cash_table.setItem(row, 3, self.make_cell(sold_by or ""))
-                        self.bio_cash_table.setItem(row, 4, self.make_cell(""))
+                        created_item = self.make_cell("")
+                        created_item.setFlags(created_item.flags() & ~Qt.ItemFlag.ItemIsEditable)
+                        self.bio_cash_table.setItem(row, 4, created_item)
             else:
                 self.bio_cash_table.setRowCount(1)
                 for col in range(5):
-                    self.bio_cash_table.setItem(0, col, self.make_cell(""))
+                    cell = self.make_cell("")
+                    if col == 4:
+                        cell.setFlags(cell.flags() & ~Qt.ItemFlag.ItemIsEditable)
+                    self.bio_cash_table.setItem(0, col, cell)
             
             # Load Cash Summary (try new schema first, fallback to original)
             cash_summary_data = None
@@ -878,31 +881,48 @@ class MainWindow(QMainWindow):
 
     def save_bio_cash(self):
         try:
+            bio_added_sum = 0.0
             for row in range(self.bio_cash_table.rowCount()):
                 purpose = self.bio_cash_table.item(row, 0)
                 amount = self.bio_cash_table.item(row, 1)
                 vendor = self.bio_cash_table.item(row, 2)
                 sold_by = self.bio_cash_table.item(row, 3)
-                daily_cash_surplus = self.bio_cash_table.item(row, 4)
                 if purpose and amount and purpose.text().strip() and amount.text().strip():
                     try:
                         amount_value = float(amount.text())
-                        surplus_value = 0.0
-                        if daily_cash_surplus and daily_cash_surplus.text().strip():
-                            surplus_value = float(daily_cash_surplus.text())
-                        
+                        bio_added_sum += amount_value
                         self.db.safe_execute("""
-                            INSERT INTO bio_cash (date, purpose, amount, vendor, sold_by, daily_cash_surplus)
-                            VALUES (?, ?, ?, ?, ?, ?)
-                        """, (self.selected_date, purpose.text().strip(), amount_value,
-                              vendor.text().strip() if vendor else "", 
-                              sold_by.text().strip() if sold_by else "",
-                              surplus_value))
+                            INSERT INTO bio_cash (date, purpose, amount, vendor, sold_by)
+                            VALUES (?, ?, ?, ?, ?)
+                        """, (
+                            self.selected_date,
+                            purpose.text().strip(),
+                            amount_value,
+                            vendor.text().strip() if vendor else "",
+                            sold_by.text().strip() if sold_by else ""
+                        ))
                     except ValueError:
                         QMessageBox.warning(self, "Invalid Amount", f"Invalid amount in row {row + 1}: {amount.text()}")
                         return
+
             self.db.conn.commit()
-            self._update_summary_auto()
+
+            if bio_added_sum > 0:
+                current_total = self.db.fetchone("SELECT total_daily_sell FROM daily_cash WHERE date = ?", (self.selected_date,))
+                current_total_daily = float(current_total[0]) if current_total and current_total[0] is not None else 0.0
+                new_total_daily = current_total_daily + bio_added_sum
+                self.db.safe_execute("""
+                    INSERT INTO daily_cash (date, total_daily_sell)
+                    VALUES (?, ?)
+                    ON CONFLICT(date) DO UPDATE SET total_daily_sell = excluded.total_daily_sell
+                """, (self.selected_date, new_total_daily))
+                self.db.conn.commit()
+
+                if self.cash_summary_table.rowCount() == 0:
+                    self.cash_summary_table.insertRow(0)
+                self.cash_summary_table.setItem(0, 7, self.make_cell(f"{new_total_daily:.2f}"))
+
+            self._load_data_for_date()
             QMessageBox.information(self, "Saved", "Bio cash saved successfully!")
         except Exception as e:
             QMessageBox.critical(self, "Error", f"Error saving bio cash: {e}")
