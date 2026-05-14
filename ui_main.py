@@ -887,6 +887,12 @@ class MainWindow(QMainWindow):
                 amount = self.bio_cash_table.item(row, 1)
                 vendor = self.bio_cash_table.item(row, 2)
                 sold_by = self.bio_cash_table.item(row, 3)
+                created_at_item = self.bio_cash_table.item(row, 4)
+
+                # Save only newly added rows that have not yet been persisted
+                if created_at_item and created_at_item.text().strip():
+                    continue
+
                 if purpose and amount and purpose.text().strip() and amount.text().strip():
                     try:
                         amount_value = float(amount.text())
