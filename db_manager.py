@@ -88,6 +88,7 @@ class DBManager:
                                 total_card_sell REAL DEFAULT 0,
                                 next_day_cash_note REAL DEFAULT 0,
                                 next_day_cash_coin REAL DEFAULT 0,
+                                daily_terminal_sell REAL DEFAULT 0,
                                 total_daily_sell REAL DEFAULT 0,
                                 total_cash_taken REAL DEFAULT 0,
                                 cash_taken_by TEXT)""")
@@ -111,6 +112,7 @@ class DBManager:
         self._ensure_column("daily_cash", "total_card_sell", "REAL DEFAULT 0")
         self._ensure_column("daily_cash", "next_day_cash_note", "REAL DEFAULT 0")
         self._ensure_column("daily_cash", "next_day_cash_coin", "REAL DEFAULT 0")
+        self._ensure_column("daily_cash", "daily_terminal_sell", "REAL DEFAULT 0")
         self._ensure_column("daily_cash", "total_daily_sell", "REAL DEFAULT 0")
         self._ensure_column("daily_cash", "total_cash_taken", "REAL DEFAULT 0")
         self._ensure_column("daily_cash", "cash_taken_by", "TEXT")
@@ -203,7 +205,10 @@ class DBManager:
             # Calculate daily surplus cash: total_cash_sell - prev_day_cash - terminal_cash
             daily_surplus_cash = total_cash_from_count - prev_day_cash - terminal_cash
             
-            # Calculate total daily sell: total_cash_sell + total_card_sell
+            # Calculate terminal-based daily sell: terminal cash plus card sell
+            daily_terminal_sell = terminal_cash + total_card_sell
+            
+            # Calculate total daily sell: total cash from cash count plus card sell
             total_daily_sell = total_cash_from_count + total_card_sell
             
             # Update bio_cash with daily_cash_surplus
@@ -236,6 +241,7 @@ class DBManager:
             
             return {
                 'daily_surplus_cash': daily_surplus_cash,
+                'daily_terminal_sell': daily_terminal_sell,
                 'total_daily_sell': total_daily_sell
             }
             

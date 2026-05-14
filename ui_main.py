@@ -158,7 +158,7 @@ class MainWindow(QMainWindow):
         # Cash Summary
         self.cash_summary_table = self._make_table([
             "Prev Day Cash", "Total Cash Sell", "Terminal Cash", "Total Card Sell",
-            "Next Day Cash Note", "Next Day Cash Coin",
+            "Next Day Cash Note", "Next Day Cash Coin", "Daily Terminal Sell",
             "Total Daily Sell", "Total Cash Taken", "Cash Taken By"
         ])
         # Add cell change handler for auto-calculation
@@ -532,15 +532,16 @@ class MainWindow(QMainWindow):
                 
                 # Calculate total daily sell: total_cash_sell + total_card_sell
                 total_daily_sell = (total_cash_sell - prev_day_cash) + total_card_sell
+                daily_terminal_sell = terminal_cash + total_card_sell
                 
                 # Set flag to prevent infinite loops
                 self._updating_cells = True
 
-                # Update the Total Cash Sell cell (column 6) with actual daily cash
-                #self.cash_summary_table.setItem(0, 4, self.make_cell(f"{cur_day_cash_sell:.2f}"))
+                # Update the Daily Terminal Sell column
+                self.cash_summary_table.setItem(0, 6, self.make_cell(f"{daily_terminal_sell:.2f}"))
                 
-                # Update the Total Daily Sell cell (column 6)
-                self.cash_summary_table.setItem(0, 6, self.make_cell(f"{total_daily_sell:.2f}"))
+                # Update the Total Daily Sell cell
+                self.cash_summary_table.setItem(0, 7, self.make_cell(f"{total_daily_sell:.2f}"))
                 
                 # Update bio cash table with daily surplus cash
                 self._update_bio_cash_surplus(daily_surplus_cash)
@@ -707,8 +708,8 @@ class MainWindow(QMainWindow):
             try:
                 cash_summary_data = self.db.fetchone("""
                     SELECT prev_day_cash, total_cash_sell, terminal_cash, total_card_sell,
-                           next_day_cash_note, next_day_cash_coin, total_daily_sell,
-                           total_cash_taken, cash_taken_by FROM daily_cash 
+                           next_day_cash_note, next_day_cash_coin, daily_terminal_sell,
+                           total_daily_sell, total_cash_taken, cash_taken_by FROM daily_cash 
                     WHERE date = ?
                 """, (self.selected_date,))
             except:
@@ -720,10 +721,14 @@ class MainWindow(QMainWindow):
                                total_cash_taken, cash_taken_by FROM daily_cash 
                         ORDER BY id DESC LIMIT 1
                     """)
-                    # Insert empty terminal_cash value at position 2
                     if cash_summary_data:
                         cash_list = list(cash_summary_data)
-                        cash_list.insert(2, 0.0)  # Insert terminal_cash at position 2
+                        # Old schema fallback: no terminal_cash and no daily_terminal_sell
+                        if len(cash_list) == 8:
+                            cash_list.insert(2, 0.0)  # Insert terminal_cash at position 2
+                            cash_list.insert(6, 0.0)  # Insert daily_terminal_sell before total_daily_sell
+                        elif len(cash_list) == 9:
+                            cash_list.insert(6, 0.0)  # Insert daily_terminal_sell before total_daily_sell
                         cash_summary_data = tuple(cash_list)
                 except:
                     cash_summary_data = None
@@ -732,11 +737,11 @@ class MainWindow(QMainWindow):
                 has_data = True
                 self.cash_summary_table.setRowCount(1)
                 for col, value in enumerate(cash_summary_data):
-                    if col < 9:  # Ensure we don't exceed table columns
+                    if col < 10:  # Ensure we don't exceed table columns
                         self.cash_summary_table.setItem(0, col, self.make_cell(str(value) if value is not None else ""))
             else:
                 self.cash_summary_table.setRowCount(1)
-                for col in range(9):
+                for col in range(10):
                     self.cash_summary_table.setItem(0, col, self.make_cell(""))
             
             # Show appropriate message
@@ -932,9 +937,10 @@ class MainWindow(QMainWindow):
             total_card = self.cash_summary_table.item(0, 3)
             next_day_note = self.cash_summary_table.item(0, 4)
             next_day_coin = self.cash_summary_table.item(0, 5)
-            total_daily = self.cash_summary_table.item(0, 6)
-            total_taken = self.cash_summary_table.item(0, 7)
-            taken_by = self.cash_summary_table.item(0, 8)
+            daily_terminal_sell = self.cash_summary_table.item(0, 6)
+            total_daily = self.cash_summary_table.item(0, 7)
+            total_taken = self.cash_summary_table.item(0, 8)
+            taken_by = self.cash_summary_table.item(0, 9)
 
             # Helper function to safely convert to float
             def safe_float(item, default=0.0):
@@ -950,27 +956,30 @@ class MainWindow(QMainWindow):
             terminal_cash_value = safe_float(terminal_cash)
             total_card_sell = safe_float(total_card)
             
-            # Calculate cash surplus and total daily sell automatically
+            # Calculate cash surplus, daily terminal sell, and total daily sell automatically
             calculation_result = self.db.calculate_cash_surplus_and_total_daily_sell(
                 self.selected_date, terminal_cash_value, prev_day_cash, total_card_sell
             )
             
             if calculation_result:
                 # Update the UI with calculated values
-                self.cash_summary_table.setItem(0, 6, self.make_cell(str(calculation_result['total_daily_sell'])))
+                self.cash_summary_table.setItem(0, 6, self.make_cell(str(calculation_result['daily_terminal_sell'])))
+                self.cash_summary_table.setItem(0, 7, self.make_cell(str(calculation_result['total_daily_sell'])))
                 
                 # Show the daily surplus cash in a message
                 QMessageBox.information(self, "Calculated Values", 
                     f"Daily Surplus Cash: €{calculation_result['daily_surplus_cash']:.2f}\n"
+                    f"Daily Terminal Sell: €{calculation_result['daily_terminal_sell']:.2f}\n"
                     f"Total Daily Sell: €{calculation_result['total_daily_sell']:.2f}")
 
             # Save all other values to database
+            daily_terminal_sell_value = terminal_cash_value + total_card_sell
             self.db.safe_execute("""
                 INSERT OR REPLACE INTO daily_cash
                 (date, prev_day_cash, total_cash_sell, terminal_cash, total_card_sell,
-                 next_day_cash_note, next_day_cash_coin,
+                 next_day_cash_note, next_day_cash_coin, daily_terminal_sell,
                  total_daily_sell, total_cash_taken, cash_taken_by)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """, (
                 self.selected_date,
                 prev_day_cash,
@@ -979,6 +988,7 @@ class MainWindow(QMainWindow):
                 total_card_sell,
                 safe_float(next_day_note),
                 safe_float(next_day_coin),
+                daily_terminal_sell_value,
                 calculation_result['total_daily_sell'] if calculation_result else safe_float(total_daily),
                 safe_float(total_taken),
                 taken_by.text().strip() if taken_by else ""

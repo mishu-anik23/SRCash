@@ -14,9 +14,10 @@ def initialize_db():
         prev_day_cash TEXT,
         total_cash_sell TEXT,
         total_card_sell TEXT,
-        total_daily_sell TEXT,
         next_day_cash_note TEXT,
         next_day_cash_coin TEXT,
+        daily_terminal_sell TEXT,
+        total_daily_sell TEXT,
         total_cash_taken TEXT,
         cash_taken_by TEXT,
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP

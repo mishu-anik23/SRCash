@@ -73,9 +73,9 @@ class TestDatabaseOperations(unittest.TestCase):
         
         expected_columns = [
             'id', 'daily_cash_count', 'other_sell', 'prev_day_cash',
-            'total_cash_sell', 'total_card_sell', 'total_daily_sell',
-            'next_day_cash_note', 'next_day_cash_coin', 'total_cash_taken',
-            'cash_taken_by', 'created_at'
+            'total_cash_sell', 'total_card_sell', 'next_day_cash_note',
+            'next_day_cash_coin', 'daily_terminal_sell', 'total_daily_sell',
+            'total_cash_taken', 'cash_taken_by', 'created_at'
         ]
         
         for col in expected_columns:
