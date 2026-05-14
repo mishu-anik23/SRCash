@@ -551,6 +551,25 @@ class MainWindow(QMainWindow):
         combo.addItem("Current Day")
         combo.addItem("Old Cash")
         combo.setProperty("cash_date", None)
+        
+        # Style the combo box for visibility
+        combo.setStyleSheet("""
+            QComboBox {
+                color: black;
+                background-color: white;
+            }
+            QComboBox::drop-down {
+                border: none;
+            }
+            QComboBox::down-arrow {
+                border: none;
+            }
+            QAbstractItemView {
+                color: black;
+                background-color: white;
+                selection-background-color: #0d47a1;
+            }
+        """)
 
         # Restore previous value if provided
         if existing_source == "Old Cash":
@@ -563,6 +582,15 @@ class MainWindow(QMainWindow):
 
         combo.currentIndexChanged.connect(lambda idx, cb=combo: self._on_cash_source_changed(cb, idx))
         table.setCellWidget(row, col, combo)
+
+    def _setup_old_invoice_date_cell(self, table: QTableWidget, row: int, col: int,
+                                     existing_date: str | None = None):
+        """Create and attach a date picker for the old invoice date."""
+        date_edit = QDateEdit()
+        date_edit.setCalendarPopup(True)
+        date_edit.setDate(QDate.fromString(existing_date, "yyyy-MM-dd") if existing_date else QDate.currentDate())
+        date_edit.setDisplayFormat("yyyy-MM-dd")
+        table.setCellWidget(row, col, date_edit)
 
     # --------- Denomination click ---------
     def _on_denom_click(self, denom):
@@ -904,7 +932,9 @@ class MainWindow(QMainWindow):
                     else:
                         continue
 
-                    self.old_invoice_table.setItem(row, 0, self.make_cell(str(inv_dt) if inv_dt is not None else ""))
+                    self.old_invoice_table.takeItem(row, 0)
+                    self._setup_old_invoice_date_cell(self.old_invoice_table, row, 0, inv_dt)
+                    
                     inv_item = self.make_cell(invoice)
                     if row_id is not None:
                         inv_item.setData(Qt.ItemDataRole.UserRole, int(row_id))
@@ -920,7 +950,9 @@ class MainWindow(QMainWindow):
                     )
             else:
                 self.old_invoice_table.setRowCount(1)
-                for col in (0, 1, 2, 4):
+                self.old_invoice_table.takeItem(0, 0)
+                self._setup_old_invoice_date_cell(self.old_invoice_table, 0, 0)
+                for col in (1, 2, 4):
                     self.old_invoice_table.setItem(0, col, self.make_cell(""))
                 self.old_invoice_table.takeItem(0, 3)
                 self._setup_cash_source_cell(self.old_invoice_table, 0, 3)
@@ -1122,7 +1154,15 @@ class MainWindow(QMainWindow):
                 if invoice and amount and invoice.text().strip() and amount.text().strip():
                     try:
                         amount_value = float(amount.text())
-                        inv_date_val = date_item.text().strip() if date_item and date_item.text().strip() else None
+                        inv_date_val = None
+                        # Get date from the date picker widget if present
+                        date_widget = self.old_invoice_table.cellWidget(row, 0)
+                        if isinstance(date_widget, QDateEdit):
+                            inv_date_val = date_widget.date().toString("yyyy-MM-dd")
+                        else:
+                            # Fallback for legacy text-based dates
+                            date_item = self.old_invoice_table.item(row, 0)
+                            inv_date_val = date_item.text().strip() if date_item and date_item.text().strip() else None
                         # Determine cash source info
                         if isinstance(cash_widget, QComboBox):
                             source_type = "Old Cash" if cash_widget.currentIndex() == 1 else "Current Day"
@@ -1165,7 +1205,7 @@ class MainWindow(QMainWindow):
     def add_old_invoice_row(self):
         row = self.old_invoice_table.rowCount()
         self.old_invoice_table.insertRow(row)
-        self.old_invoice_table.setItem(row, 0, self.make_cell(""))
+        self._setup_old_invoice_date_cell(self.old_invoice_table, row, 0)
         self.old_invoice_table.setItem(row, 1, self.make_cell(""))
         self.old_invoice_table.setItem(row, 2, self.make_cell(""))
         self.old_invoice_table.setItem(row, 4, self.make_cell(""))
