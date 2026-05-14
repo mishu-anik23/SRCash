@@ -130,13 +130,13 @@ class DBManager:
         # daily_expenses: add cash source tracking + created_at (persist marker like bio_cash)
         self._ensure_column("daily_expenses", "cash_source", "TEXT")
         self._ensure_column("daily_expenses", "cash_source_date", "TEXT")
-        self._ensure_column("daily_expenses", "created_at", "TIMESTAMP DEFAULT CURRENT_TIMESTAMP")
+        self._ensure_column("daily_expenses", "created_at", "TIMESTAMP")
 
         # old_invoices: add cash source tracking + invoice_date + created_at
         self._ensure_column("old_invoices", "cash_source", "TEXT")
         self._ensure_column("old_invoices", "cash_source_date", "TEXT")
         self._ensure_column("old_invoices", "invoice_date", "TEXT")
-        self._ensure_column("old_invoices", "created_at", "TIMESTAMP DEFAULT CURRENT_TIMESTAMP")
+        self._ensure_column("old_invoices", "created_at", "TIMESTAMP")
         # Legacy old_invoices: date was the invoice date; copy into invoice_date for UI column 0
         self.safe_execute(
             "UPDATE old_invoices SET invoice_date = date WHERE invoice_date IS NULL OR TRIM(COALESCE(invoice_date,'')) = ''"

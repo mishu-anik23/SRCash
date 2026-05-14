@@ -1072,8 +1072,8 @@ class MainWindow(QMainWindow):
                             source_date = None
 
                         self.db.safe_execute("""
-                             INSERT INTO daily_expenses (date, invoice, amount, status, cash_source, cash_source_date)
-                             VALUES (?, ?, ?, ?, ?, ?)
+                             INSERT INTO daily_expenses (date, invoice, amount, status, cash_source, cash_source_date, created_at)
+                             VALUES (?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
                          """, (
                              self.selected_date,
                              invoice.text().strip(),
@@ -1134,8 +1134,8 @@ class MainWindow(QMainWindow):
                             source_date = None
 
                         self.db.safe_execute("""
-                            INSERT INTO old_invoices (date, invoice_date, invoice, amount, cash_source, cash_source_date)
-                            VALUES (?, ?, ?, ?, ?, ?)
+                            INSERT INTO old_invoices (date, invoice_date, invoice, amount, cash_source, cash_source_date, created_at)
+                            VALUES (?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
                         """, (
                             self.selected_date,
                             inv_date_val,
