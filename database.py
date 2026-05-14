@@ -50,7 +50,10 @@ def initialize_db():
         purpose TEXT,
         amount REAL,
         vendor TEXT,
-        sold_by TEXT
+        sold_by TEXT,
+        daily_cash_surplus REAL DEFAULT 0,
+        date TEXT,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
     )''')
 
     conn.commit()

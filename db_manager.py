@@ -78,7 +78,8 @@ class DBManager:
                                 cash_source_date TEXT)""")
         self.safe_execute("""CREATE TABLE IF NOT EXISTS bio_cash (
                                 id INTEGER PRIMARY KEY AUTOINCREMENT,
-                                date TEXT, purpose TEXT, amount REAL, vendor TEXT, sold_by TEXT, daily_cash_surplus REAL DEFAULT 0)""")
+                                date TEXT, purpose TEXT, amount REAL, vendor TEXT, sold_by TEXT, daily_cash_surplus REAL DEFAULT 0,
+                                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)""")
         self.safe_execute("""CREATE TABLE IF NOT EXISTS daily_cash (
                                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                                 date TEXT,
@@ -120,6 +121,8 @@ class DBManager:
         
         # bio_cash: add daily_cash_surplus column
         self._ensure_column("bio_cash", "daily_cash_surplus", "REAL DEFAULT 0")
+        self._ensure_column("bio_cash", "date", "TEXT")
+        self._ensure_column("bio_cash", "created_at", "TIMESTAMP DEFAULT CURRENT_TIMESTAMP")
 
         # daily_expenses: add cash source tracking
         self._ensure_column("daily_expenses", "cash_source", "TEXT")
