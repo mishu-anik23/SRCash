@@ -144,7 +144,7 @@ class MainWindow(QMainWindow):
         right_layout = QVBoxLayout()
 
         # Daily Expenses
-        self.expenses_table = self._make_table(["Invoice", "Amount", "Status", "Cash Source"])
+        self.expenses_table = self._make_table(["Invoice", "Amount", "Status", "Cash Source", "Created At"])
         name_expense_table = QLabel("Daily Expenses")
         name_expense_table.setStyleSheet("font-size: 16px; font-weight: bold; padding: 2px;")
         #self.name_banner.setAlignment(Qt.AlignmentFlag.AlignCenter)
@@ -152,17 +152,17 @@ class MainWindow(QMainWindow):
         right_layout.addWidget(name_expense_table)
         right_layout.addWidget(self.expenses_table)
         self._add_table_buttons(right_layout, self.save_expenses, self.cancel_expenses, self.add_expense_row)
+        self.expenses_table.takeItem(0, 3)
+        self._setup_cash_source_cell(self.expenses_table, 0, 3)
 
         # Old Invoice
-        self.old_invoice_table = self._make_table(["Date", "Invoice", "Amount", "Cash Source"])
+        self.old_invoice_table = self._make_table(["Date", "Invoice", "Amount", "Cash Source", "Created At"])
         name_old_invoice_table = QLabel("Old Invoice Payment")
         name_old_invoice_table.setStyleSheet("font-size: 16px; font-weight: bold; padding: 2px;")
         right_layout.addWidget(name_old_invoice_table)
         right_layout.addWidget(self.old_invoice_table)
         self._add_table_buttons(right_layout, self.save_old_invoices, self.cancel_old_invoices, self.add_old_invoice_row)
-
-        # Initialize default Cash Source widgets for the first row of each table
-        self._setup_cash_source_cell(self.expenses_table, 0, 3)
+        self.old_invoice_table.takeItem(0, 3)
         self._setup_cash_source_cell(self.old_invoice_table, 0, 3)
 
         # Cash summary table (created before Bio so surplus / totals can reference it)
@@ -488,6 +488,19 @@ class MainWindow(QMainWindow):
         surplus_item.setFlags(surplus_item.flags() & ~Qt.ItemFlag.ItemIsEditable)
         self.bio_cash_table.setItem(0, 1, surplus_item)
 
+    def _is_row_loaded_from_db(self, invoice_item: QTableWidgetItem | None) -> bool:
+        """True if this row was loaded from DB (do not INSERT again on Save)."""
+        if invoice_item is None:
+            return False
+        v = invoice_item.data(Qt.ItemDataRole.UserRole)
+        return v is not None
+
+    def _set_created_at_display_cell(self, table: QTableWidget, row: int, col: int, text: str, readonly: bool):
+        it = self.make_cell(text or "")
+        if readonly:
+            it.setFlags(it.flags() & ~Qt.ItemFlag.ItemIsEditable)
+        table.setItem(row, col, it)
+
     # --------- Cash Source helpers ---------
     def _ask_old_cash_date(self):
         """Show a calendar dialog and return selected date as yyyy-MM-dd, or None if cancelled."""
@@ -801,69 +814,115 @@ class MainWindow(QMainWindow):
             expenses_data = None
             try:
                 expenses_data = self.db.fetchall("""
-                    SELECT invoice, amount, status, cash_source, cash_source_date FROM daily_expenses 
-                    WHERE date = ? ORDER BY id
+                    SELECT id, invoice, amount, status, cash_source, cash_source_date, created_at
+                    FROM daily_expenses WHERE date = ? ORDER BY id
                 """, (self.selected_date,))
-            except:
-                # Fallback to original expenses table (without date filter)
+            except Exception:
                 try:
                     expenses_data = self.db.fetchall("""
-                        SELECT invoice, amount, status FROM expenses 
-                        ORDER BY id
-                    """)
-                except:
-                    expenses_data = []
+                        SELECT invoice, amount, status, cash_source, cash_source_date FROM daily_expenses
+                        WHERE date = ? ORDER BY id
+                    """, (self.selected_date,))
+                except Exception:
+                    try:
+                        expenses_data = self.db.fetchall("""
+                            SELECT invoice, amount, status FROM expenses 
+                            ORDER BY id
+                        """)
+                    except Exception:
+                        expenses_data = []
             
             if expenses_data:
                 has_data = True
                 self.expenses_table.setRowCount(len(expenses_data))
                 for row, data_row in enumerate(expenses_data):
-                    # Support both new (with cash source) and legacy (without) schemas
-                    if len(data_row) >= 5:
+                    row_id = None
+                    created_at = None
+                    if len(data_row) >= 7:
+                        row_id, invoice, amount, status, cash_source, cash_date, created_at = data_row[:7]
+                    elif len(data_row) == 6:
+                        invoice, amount, status, cash_source, cash_date, created_at = data_row
+                    elif len(data_row) == 5:
                         invoice, amount, status, cash_source, cash_date = data_row
-                    else:
-                        invoice, amount, status = data_row
+                    elif len(data_row) >= 3:
+                        invoice, amount, status = data_row[:3]
                         cash_source, cash_date = "Current Day", None
+                    else:
+                        continue
 
-                    self.expenses_table.setItem(row, 0, self.make_cell(invoice))
+                    inv_item = self.make_cell(invoice)
+                    if row_id is not None:
+                        inv_item.setData(Qt.ItemDataRole.UserRole, int(row_id))
+                    self.expenses_table.setItem(row, 0, inv_item)
                     self.expenses_table.setItem(row, 1, self.make_cell(str(amount)))
                     self.expenses_table.setItem(row, 2, self.make_cell(status))
-                    # Ensure we have a Cash Source widget for this row
+                    self.expenses_table.takeItem(row, 3)
                     self._setup_cash_source_cell(self.expenses_table, row, 3, cash_source, cash_date)
+                    ca_ro = row_id is not None or (created_at is not None and str(created_at).strip() != "")
+                    self._set_created_at_display_cell(
+                        self.expenses_table, row, 4,
+                        str(created_at) if created_at else "",
+                        ca_ro,
+                    )
             else:
                 self.expenses_table.setRowCount(1)
-                for col in range(3):
-                    self.expenses_table.setItem(0, col, self.make_cell(""))
-                # Default Cash Source for the initial empty row
+                for col in (0, 1, 2, 4):
+                    txt = "unpaid" if col == 2 else ""
+                    self.expenses_table.setItem(0, col, self.make_cell(txt))
+                self.expenses_table.takeItem(0, 3)
                 self._setup_cash_source_cell(self.expenses_table, 0, 3)
             
-            # Load Old Invoices
-            old_invoices_data = self.db.fetchall("""
-                SELECT date, invoice, amount, cash_source, cash_source_date FROM old_invoices 
-                WHERE date = ? ORDER BY id
-            """, (self.selected_date,))
+            # Load Old Invoices (date column = session day; first column = invoice_date)
+            old_invoices_data = None
+            try:
+                old_invoices_data = self.db.fetchall("""
+                    SELECT id, COALESCE(invoice_date, date) AS inv_dt, invoice, amount,
+                           cash_source, cash_source_date, created_at
+                    FROM old_invoices WHERE date = ? ORDER BY id
+                """, (self.selected_date,))
+            except Exception:
+                try:
+                    old_invoices_data = self.db.fetchall("""
+                        SELECT id, date, invoice, amount, cash_source, cash_source_date
+                        FROM old_invoices WHERE date = ? ORDER BY id
+                    """, (self.selected_date,))
+                except Exception:
+                    old_invoices_data = []
             
             if old_invoices_data:
                 has_data = True
                 self.old_invoice_table.setRowCount(len(old_invoices_data))
                 for row, data_row in enumerate(old_invoices_data):
-                    # Support both new (with cash source) and legacy (without) schemas
-                    if len(data_row) >= 5:
-                        date, invoice, amount, cash_source, cash_date = data_row
+                    row_id = None
+                    created_at = None
+                    if len(data_row) >= 7:
+                        row_id, inv_dt, invoice, amount, cash_source, cash_date, created_at = data_row[:7]
+                    elif len(data_row) == 6:
+                        row_id, inv_dt, invoice, amount, cash_source, cash_date = data_row
+                    elif len(data_row) == 5:
+                        inv_dt, invoice, amount, cash_source, cash_date = data_row
                     else:
-                        date, invoice, amount = data_row
-                        cash_source, cash_date = "Current Day", None
+                        continue
 
-                    self.old_invoice_table.setItem(row, 0, self.make_cell(date))
-                    self.old_invoice_table.setItem(row, 1, self.make_cell(invoice))
+                    self.old_invoice_table.setItem(row, 0, self.make_cell(str(inv_dt) if inv_dt is not None else ""))
+                    inv_item = self.make_cell(invoice)
+                    if row_id is not None:
+                        inv_item.setData(Qt.ItemDataRole.UserRole, int(row_id))
+                    self.old_invoice_table.setItem(row, 1, inv_item)
                     self.old_invoice_table.setItem(row, 2, self.make_cell(str(amount)))
-                    # Ensure we have a Cash Source widget for this row
+                    self.old_invoice_table.takeItem(row, 3)
                     self._setup_cash_source_cell(self.old_invoice_table, row, 3, cash_source, cash_date)
+                    ca_ro = row_id is not None or (created_at is not None and str(created_at).strip() != "")
+                    self._set_created_at_display_cell(
+                        self.old_invoice_table, row, 4,
+                        str(created_at) if created_at else "",
+                        ca_ro,
+                    )
             else:
                 self.old_invoice_table.setRowCount(1)
-                for col in range(3):
+                for col in (0, 1, 2, 4):
                     self.old_invoice_table.setItem(0, col, self.make_cell(""))
-                # Default Cash Source for the initial empty row
+                self.old_invoice_table.takeItem(0, 3)
                 self._setup_cash_source_cell(self.old_invoice_table, 0, 3)
 
             # Load Cash Summary first so daily surplus can use prev_day / terminal from DB
@@ -992,6 +1051,8 @@ class MainWindow(QMainWindow):
         try:
             for row in range(self.expenses_table.rowCount()):
                 invoice = self.expenses_table.item(row, 0)
+                if self._is_row_loaded_from_db(invoice):
+                    continue
                 amount = self.expenses_table.item(row, 1)
                 status = self.expenses_table.item(row, 2)
                 cash_widget = self.expenses_table.cellWidget(row, 3)
@@ -1026,6 +1087,7 @@ class MainWindow(QMainWindow):
                         return
             self.db.conn.commit()
             self._update_summary_auto()
+            self._load_data_for_date(silent=True)
             QMessageBox.information(self, "Saved", "Expenses saved successfully!")
         except Exception as e:
             QMessageBox.critical(self, "Error", f"Error saving expenses: {e}")
@@ -1044,7 +1106,7 @@ class MainWindow(QMainWindow):
         self.expenses_table.setItem(row, 0, self.make_cell(""))  # invoice
         self.expenses_table.setItem(row, 1, self.make_cell(""))  # amount
         self.expenses_table.setItem(row, 2, self.make_cell("unpaid"))  # default status
-        # Default Cash Source for new row
+        self.expenses_table.setItem(row, 4, self.make_cell(""))  # created_at empty = new row
         self._setup_cash_source_cell(self.expenses_table, row, 3)
 
     def save_old_invoices(self):
@@ -1052,28 +1114,31 @@ class MainWindow(QMainWindow):
             for row in range(self.old_invoice_table.rowCount()):
                 date_item = self.old_invoice_table.item(row, 0)
                 invoice = self.old_invoice_table.item(row, 1)
+                if self._is_row_loaded_from_db(invoice):
+                    continue
                 amount = self.old_invoice_table.item(row, 2)
                 cash_widget = self.old_invoice_table.cellWidget(row, 3)
 
-                if date_item and invoice and amount and date_item.text().strip() and invoice.text().strip() and amount.text().strip():
+                if invoice and amount and invoice.text().strip() and amount.text().strip():
                     try:
                         amount_value = float(amount.text())
+                        inv_date_val = date_item.text().strip() if date_item and date_item.text().strip() else None
                         # Determine cash source info
                         if isinstance(cash_widget, QComboBox):
                             source_type = "Old Cash" if cash_widget.currentIndex() == 1 else "Current Day"
                             source_date = cash_widget.property("cash_date")
                             if source_type == "Old Cash" and not source_date:
-                                # If user picked Old Cash but no date stored, fall back to selected date in row/date column
-                                source_date = date_item.text().strip()
+                                source_date = inv_date_val or self.selected_date
                         else:
                             source_type = "Current Day"
                             source_date = None
 
                         self.db.safe_execute("""
-                            INSERT INTO old_invoices (date, invoice, amount, cash_source, cash_source_date)
-                            VALUES (?, ?, ?, ?, ?)
+                            INSERT INTO old_invoices (date, invoice_date, invoice, amount, cash_source, cash_source_date)
+                            VALUES (?, ?, ?, ?, ?, ?)
                         """, (
-                            date_item.text().strip(),
+                            self.selected_date,
+                            inv_date_val,
                             invoice.text().strip(),
                             amount_value,
                             source_type,
@@ -1084,6 +1149,7 @@ class MainWindow(QMainWindow):
                         return
             self.db.conn.commit()
             self._update_summary_auto()
+            self._load_data_for_date(silent=True)
             QMessageBox.information(self, "Saved", "Old invoices saved successfully!")
         except Exception as e:
             QMessageBox.critical(self, "Error", f"Error saving old invoices: {e}")
@@ -1102,7 +1168,7 @@ class MainWindow(QMainWindow):
         self.old_invoice_table.setItem(row, 0, self.make_cell(""))
         self.old_invoice_table.setItem(row, 1, self.make_cell(""))
         self.old_invoice_table.setItem(row, 2, self.make_cell(""))
-        # Default Cash Source for new row
+        self.old_invoice_table.setItem(row, 4, self.make_cell(""))
         self._setup_cash_source_cell(self.old_invoice_table, row, 3)
 
     def save_bio_cash(self):

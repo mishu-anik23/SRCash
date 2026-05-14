@@ -68,14 +68,17 @@ class DBManager:
                                 amount REAL,
                                 status TEXT,
                                 cash_source TEXT,
-                                cash_source_date TEXT)""")
+                                cash_source_date TEXT,
+                                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)""")
         self.safe_execute("""CREATE TABLE IF NOT EXISTS old_invoices (
                                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                                 date TEXT,
+                                invoice_date TEXT,
                                 invoice TEXT,
                                 amount REAL,
                                 cash_source TEXT,
-                                cash_source_date TEXT)""")
+                                cash_source_date TEXT,
+                                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)""")
         self.safe_execute("""CREATE TABLE IF NOT EXISTS bio_cash (
                                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                                 date TEXT, purpose TEXT, amount REAL, vendor TEXT, sold_by TEXT, daily_cash_surplus REAL DEFAULT 0,
@@ -124,13 +127,20 @@ class DBManager:
         self._ensure_column("bio_cash", "date", "TEXT")
         self._ensure_column("bio_cash", "created_at", "TIMESTAMP DEFAULT CURRENT_TIMESTAMP")
 
-        # daily_expenses: add cash source tracking
+        # daily_expenses: add cash source tracking + created_at (persist marker like bio_cash)
         self._ensure_column("daily_expenses", "cash_source", "TEXT")
         self._ensure_column("daily_expenses", "cash_source_date", "TEXT")
+        self._ensure_column("daily_expenses", "created_at", "TIMESTAMP DEFAULT CURRENT_TIMESTAMP")
 
-        # old_invoices: add cash source tracking
+        # old_invoices: add cash source tracking + invoice_date + created_at
         self._ensure_column("old_invoices", "cash_source", "TEXT")
         self._ensure_column("old_invoices", "cash_source_date", "TEXT")
+        self._ensure_column("old_invoices", "invoice_date", "TEXT")
+        self._ensure_column("old_invoices", "created_at", "TIMESTAMP DEFAULT CURRENT_TIMESTAMP")
+        # Legacy old_invoices: date was the invoice date; copy into invoice_date for UI column 0
+        self.safe_execute(
+            "UPDATE old_invoices SET invoice_date = date WHERE invoice_date IS NULL OR TRIM(COALESCE(invoice_date,'')) = ''"
+        )
 
     # ---------- business ops ----------
     def upsert_denomination(self, date_str: str, denom_display: str, qty: int):
