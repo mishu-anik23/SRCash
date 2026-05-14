@@ -12,6 +12,17 @@ from PyQt6.QtCore import Qt, QDate
 from db_manager import DBManager, DENOM_MAPPING
 from ui_stats import StatWindow   # ✅ import statistics window
 
+# Default first row in Bio Cash table (legacy DB rows may use the older label)
+DAILY_SURPLUS_PURPOSE = "Daily Surplus Cash"
+DAILY_SURPLUS_PURPOSE_LEGACY = "Daily Cash Surplus"
+
+
+def _is_daily_surplus_purpose(text: str | None) -> bool:
+    if not text:
+        return False
+    p = text.strip()
+    return p in (DAILY_SURPLUS_PURPOSE, DAILY_SURPLUS_PURPOSE_LEGACY)
+
 
 class QuantityDialog(QDialog):
     def __init__(self, denom_name, denom_value, parent=None):
@@ -147,6 +158,14 @@ class MainWindow(QMainWindow):
         self._setup_cash_source_cell(self.expenses_table, 0, 3)
         self._setup_cash_source_cell(self.old_invoice_table, 0, 3)
 
+        # Cash summary table (created before Bio so surplus / totals can reference it)
+        self.cash_summary_table = self._make_table([
+            "Prev Day Cash", "Total Cash Sell", "Terminal Cash", "Total Card Sell",
+            "Next Day Cash Note", "Next Day Cash Coin", "Daily Terminal Sell",
+            "Total Daily Sell", "Total Cash Taken", "Cash Taken By"
+        ])
+        self.cash_summary_table.cellChanged.connect(self._on_cash_summary_cell_changed)
+
         # Bio Cash
         self.bio_cash_table = self._make_table(["Purpose", "Amount", "Vendor", "Sold By", "Created At"])
         self.bio_cash_table.cellChanged.connect(self._on_bio_cash_cell_changed)
@@ -156,14 +175,27 @@ class MainWindow(QMainWindow):
         right_layout.addWidget(self.bio_cash_table)
         self._add_table_buttons(right_layout, self.save_bio_cash, self.cancel_bio_cash, self.add_bio_cash_row)
 
-        # Cash Summary
-        self.cash_summary_table = self._make_table([
-            "Prev Day Cash", "Total Cash Sell", "Terminal Cash", "Total Card Sell",
-            "Next Day Cash Note", "Next Day Cash Coin", "Daily Terminal Sell",
-            "Total Daily Sell", "Total Cash Taken", "Cash Taken By"
-        ])
-        # Add cell change handler for auto-calculation
-        self.cash_summary_table.cellChanged.connect(self._on_cash_summary_cell_changed)
+        bio_total_row = QHBoxLayout()
+        bio_total_row.addWidget(QLabel("Total Bio Cash (selected day):"))
+        self.btn_total_bio_cash = QPushButton("€ 0.00")
+        self.btn_total_bio_cash.setEnabled(False)
+        self.btn_total_bio_cash.setStyleSheet("""
+            QPushButton {
+                background-color: #2E4A3E;
+                color: white;
+                font-weight: bold;
+                font-size: 14px;
+                padding: 8px 14px;
+                border-radius: 4px;
+            }
+        """)
+        bio_total_row.addWidget(self.btn_total_bio_cash)
+        bio_total_row.addStretch()
+        right_layout.addLayout(bio_total_row)
+
+        self._init_bio_cash_default_table_state()
+
+        # Cash Summary (widgets created above; add to layout here)
         name_cash_summery_table = QLabel("Daily Cash Summary")
         name_cash_summery_table.setStyleSheet("font-size: 16px; font-weight: bold; padding: 2px;")
         right_layout.addWidget(name_cash_summery_table)
@@ -201,7 +233,7 @@ class MainWindow(QMainWindow):
                     border-radius: 5px;
                 }
             """)
-        btn_load_data.clicked.connect(self._load_data_for_date)
+        btn_load_data.clicked.connect(lambda: self._load_data_for_date())
         
         # Add Show Stats button
         btn_stats = QPushButton("Show Statistics")
@@ -332,6 +364,74 @@ class MainWindow(QMainWindow):
             add_btn.clicked.connect(add_fn)
             btn_layout.addWidget(add_btn)
         layout.addLayout(btn_layout)
+
+    # --------- Bio Cash: default row & totals ---------
+    def _fetch_saved_daily_surplus_from_db(self):
+        """Return saved Daily Surplus amount for selected date, or None if not stored."""
+        try:
+            row = self.db.fetchone(
+                """
+                SELECT amount FROM bio_cash
+                WHERE date = ? AND purpose IN (?, ?)
+                ORDER BY id DESC LIMIT 1
+                """,
+                (self.selected_date, DAILY_SURPLUS_PURPOSE, DAILY_SURPLUS_PURPOSE_LEGACY),
+            )
+            if row and row[0] is not None:
+                return float(row[0])
+        except Exception:
+            pass
+        return None
+
+    def _init_bio_cash_default_table_state(self):
+        """First row: Daily Surplus Cash — amount from DB for this date, else calculated, else 0."""
+        saved = self._fetch_saved_daily_surplus_from_db()
+        if saved is not None:
+            surplus = saved
+        else:
+            surplus = self._calculate_daily_surplus_cash()
+            if surplus is None:
+                surplus = 0.0
+
+        self.bio_cash_table.setRowCount(max(1, self.bio_cash_table.rowCount()))
+        self.bio_cash_table.setItem(0, 0, self.make_cell(DAILY_SURPLUS_PURPOSE))
+        daily_surplus_item = self.make_cell(f"{surplus:.2f}")
+        daily_surplus_item.setFlags(daily_surplus_item.flags() & ~Qt.ItemFlag.ItemIsEditable)
+        self.bio_cash_table.setItem(0, 1, daily_surplus_item)
+        self.bio_cash_table.setItem(0, 2, self.make_cell(""))
+        self.bio_cash_table.setItem(0, 3, self.make_cell(""))
+        created_item = self.make_cell("")
+        created_item.setFlags(created_item.flags() & ~Qt.ItemFlag.ItemIsEditable)
+        self.bio_cash_table.setItem(0, 4, created_item)
+        self._update_bio_cash_total_display()
+
+    def _table_cell_float(self, item, default=0.0) -> float:
+        if item and item.text().strip():
+            try:
+                return float(item.text())
+            except ValueError:
+                return default
+        return default
+
+    def _table_bio_surplus_amount(self) -> float:
+        item = self.bio_cash_table.item(0, 1)
+        return self._table_cell_float(item, 0.0)
+
+    def _table_bio_extra_amount_sum(self) -> float:
+        """Sum of Amount column for user rows (row > 0), excluding surplus purpose rows."""
+        total = 0.0
+        for row in range(1, self.bio_cash_table.rowCount()):
+            purpose_item = self.bio_cash_table.item(row, 0)
+            purpose = purpose_item.text().strip() if purpose_item else ""
+            if _is_daily_surplus_purpose(purpose):
+                continue
+            amount_item = self.bio_cash_table.item(row, 1)
+            total += self._table_cell_float(amount_item, 0.0)
+        return total
+
+    def _table_total_bio_cash(self) -> float:
+        """Daily surplus (row 0) + sum of other row amounts (real-time from table)."""
+        return self._table_bio_surplus_amount() + self._table_bio_extra_amount_sum()
 
     # --------- Cash Source helpers ---------
     def _ask_old_cash_date(self):
@@ -467,6 +567,8 @@ class MainWindow(QMainWindow):
                 
             self.cash_summary_table.setItem(0, 1, self.make_cell(str(total_cash_sell)))
             self.cash_summary_table.setItem(0, 5, self.make_cell(str(coin_sum)))
+
+            self._update_bio_cash_total_display()
             
         except Exception as e:
             print(f"Error in _update_summary_auto: {e}")
@@ -489,7 +591,13 @@ class MainWindow(QMainWindow):
 
     def _calculate_bio_cash_sum(self):
         try:
-            result = self.db.fetchone("SELECT COALESCE(SUM(amount), 0) FROM bio_cash WHERE date = ? AND purpose <> 'Daily Cash Surplus'", (self.selected_date,))
+            result = self.db.fetchone(
+                """
+                SELECT COALESCE(SUM(amount), 0) FROM bio_cash
+                WHERE date = ? AND purpose NOT IN (?, ?)
+                """,
+                (self.selected_date, DAILY_SURPLUS_PURPOSE, DAILY_SURPLUS_PURPOSE_LEGACY),
+            )
             return float(result[0]) if result and result[0] is not None else 0.0
         except Exception:
             return 0.0
@@ -509,19 +617,25 @@ class MainWindow(QMainWindow):
                 return default
 
             base_total_daily = (safe_float(total_cash_sell_item) - safe_float(prev_day_item)) + safe_float(total_card_item)
-            bio_sum = self._calculate_bio_cash_sum()
-            total_with_bio = base_total_daily + bio_sum
+            # Real-time: use table amounts for extra bio rows (not only DB-saved rows)
+            extra_sum = self._table_bio_extra_amount_sum()
+            total_with_bio = base_total_daily + extra_sum
+            total_bio = self._table_total_bio_cash()
+
+            if hasattr(self, "btn_total_bio_cash"):
+                self.btn_total_bio_cash.setText(f"€ {total_bio:.2f}")
 
             if self.cash_summary_table.rowCount() == 0:
                 self.cash_summary_table.insertRow(0)
+            self._updating_cells = True
             self.cash_summary_table.setItem(0, 7, self.make_cell(f"{total_with_bio:.2f}"))
+            self._updating_cells = False
         except Exception as e:
+            self._updating_cells = False
             print(f"Error updating bio cash total display: {e}")
 
     def _on_bio_cash_cell_changed(self, row, column):
-        # Ignore changes to the default daily surplus row
-        if row == 0:
-            return
+        # Row 0 surplus is not user-editable; still refresh totals if structure changes elsewhere
         self._update_bio_cash_total_display()
 
     def _on_cash_summary_cell_changed(self, row, column):
@@ -576,29 +690,19 @@ class MainWindow(QMainWindow):
                 # Calculate daily surplus cash: total_cash_sell - prev_day_cash - terminal_cash
                 daily_surplus_cash = total_cash_sell - prev_day_cash - terminal_cash
 
-                # Calculate current day cash sell: total_cash_sell - prev_day_cash
-                #cur_day_cash_sell = total_cash_sell - prev_day_cash
-                
-                # Calculate total daily sell: total_cash_sell + total_card_sell
+                # Calculate total daily sell: (total_cash_sell - prev_day_cash) + total_card_sell
                 total_daily_sell = (total_cash_sell - prev_day_cash) + total_card_sell
                 daily_terminal_sell = terminal_cash + total_card_sell
-                
-                # Set flag to prevent infinite loops
+
                 self._updating_cells = True
 
-                # Update the Daily Terminal Sell column
                 self.cash_summary_table.setItem(0, 6, self.make_cell(f"{daily_terminal_sell:.2f}"))
-                
-                # Update the Total Daily Sell cell
-                self.cash_summary_table.setItem(0, 7, self.make_cell(f"{total_daily_sell:.2f}"))
-                
-                # Reset flag
+
                 self._updating_cells = False
-                
-                # Show calculation info in status (optional - you can remove this if too verbose)
+
                 print(f"Auto-calculated: Daily Surplus Cash: €{daily_surplus_cash:.2f}, Total Daily Sell: €{total_daily_sell:.2f}")
-                
-                self._update_bio_cash_total_display()
+
+            self._update_bio_cash_total_display()
         except Exception as e:
             print(f"Error in auto-calculation: {e}")
             self._updating_cells = False  # Reset flag on error
@@ -606,28 +710,33 @@ class MainWindow(QMainWindow):
     def _update_bio_cash_surplus(self, cash_surplus):
         """Update bio cash table with daily cash surplus"""
         try:
-            # Check if there's already a "Daily Cash Surplus" entry
             existing_row = -1
             for row in range(self.bio_cash_table.rowCount()):
                 purpose_item = self.bio_cash_table.item(row, 0)
-                if purpose_item and purpose_item.text().strip() == "Daily Cash Surplus":
+                if purpose_item and _is_daily_surplus_purpose(purpose_item.text().strip()):
                     existing_row = row
                     break
-            
+
             if existing_row >= 0:
-                # Update existing row
+                self.bio_cash_table.setItem(existing_row, 0, self.make_cell(DAILY_SURPLUS_PURPOSE))
                 self.bio_cash_table.setItem(existing_row, 1, self.make_cell(f"{cash_surplus:.2f}"))
-                self.bio_cash_table.setItem(existing_row, 4, self.make_cell(f"{cash_surplus:.2f}"))
+                amt = self.bio_cash_table.item(existing_row, 1)
+                if amt:
+                    amt.setFlags(amt.flags() & ~Qt.ItemFlag.ItemIsEditable)
             else:
-                # Add new row for daily cash surplus
                 row = self.bio_cash_table.rowCount()
                 self.bio_cash_table.insertRow(row)
-                self.bio_cash_table.setItem(row, 0, self.make_cell("Daily Cash Surplus"))
-                self.bio_cash_table.setItem(row, 1, self.make_cell(f"{cash_surplus:.2f}"))
+                self.bio_cash_table.setItem(row, 0, self.make_cell(DAILY_SURPLUS_PURPOSE))
+                surplus_item = self.make_cell(f"{cash_surplus:.2f}")
+                surplus_item.setFlags(surplus_item.flags() & ~Qt.ItemFlag.ItemIsEditable)
+                self.bio_cash_table.setItem(row, 1, surplus_item)
                 self.bio_cash_table.setItem(row, 2, self.make_cell(""))
                 self.bio_cash_table.setItem(row, 3, self.make_cell(""))
-                self.bio_cash_table.setItem(row, 4, self.make_cell(f"{cash_surplus:.2f}"))
-                
+                created_item = self.make_cell("")
+                created_item.setFlags(created_item.flags() & ~Qt.ItemFlag.ItemIsEditable)
+                self.bio_cash_table.setItem(row, 4, created_item)
+
+            self._update_bio_cash_total_display()
         except Exception as e:
             print(f"Error updating bio cash surplus: {e}")
 
@@ -635,8 +744,8 @@ class MainWindow(QMainWindow):
         self.stats_window = StatWindow(self.db)
         self.stats_window.show()
     
-    def _load_data_for_date(self):
-        """Load all saved data for the selected date"""
+    def _load_data_for_date(self, silent=False):
+        """Load all saved data for the selected date. If silent=True, do not show summary message boxes."""
         try:
             has_data = False
             
@@ -708,67 +817,8 @@ class MainWindow(QMainWindow):
                     self.old_invoice_table.setItem(0, col, self.make_cell(""))
                 # Default Cash Source for the initial empty row
                 self._setup_cash_source_cell(self.old_invoice_table, 0, 3)
-            
-            # Load Bio Cash entries (excluding the auto daily surplus row)
-            bio_cash_data = None
-            try:
-                bio_cash_data = self.db.fetchall("""
-                    SELECT purpose, amount, vendor, sold_by, created_at FROM bio_cash
-                    WHERE date = ? AND purpose <> 'Daily Cash Surplus' ORDER BY id
-                """, (self.selected_date,))
-            except:
-                # Fallback to original bio_cash table (without date or created_at)
-                try:
-                    bio_cash_data = self.db.fetchall("""
-                        SELECT purpose, amount, vendor, sold_by FROM bio_cash
-                        ORDER BY id
-                    """)
-                except:
-                    bio_cash_data = []
-            
-            # Calculate daily surplus cash and create the default first row
-            surplus_cash = self._calculate_daily_surplus_cash()
-            if surplus_cash is None:
-                surplus_cash = 0.0
-            
-            # Prepare rows: first row is Daily Cash Surplus, then saved bio entries
-            rows = []
-            if bio_cash_data:
-                has_data = True
-                for data_row in bio_cash_data:
-                    if len(data_row) >= 5:
-                        purpose, amount, vendor, sold_by, created_at = data_row
-                        rows.append((purpose, amount, vendor or "", sold_by or "", str(created_at) if created_at else ""))
-                    else:
-                        purpose, amount, vendor, sold_by = data_row
-                        rows.append((purpose, amount, vendor or "", sold_by or "", ""))
 
-            self.bio_cash_table.setRowCount(max(1, 1 + len(rows)))
-
-            # First row: default daily surplus cash
-            self.bio_cash_table.setItem(0, 0, self.make_cell("Daily Cash Surplus"))
-            daily_surplus_item = self.make_cell(f"{surplus_cash:.2f}")
-            daily_surplus_item.setFlags(daily_surplus_item.flags() & ~Qt.ItemFlag.ItemIsEditable)
-            self.bio_cash_table.setItem(0, 1, daily_surplus_item)
-            self.bio_cash_table.setItem(0, 2, self.make_cell(""))
-            self.bio_cash_table.setItem(0, 3, self.make_cell(""))
-            created_item = self.make_cell("")
-            created_item.setFlags(created_item.flags() & ~Qt.ItemFlag.ItemIsEditable)
-            self.bio_cash_table.setItem(0, 4, created_item)
-
-            # Append saved user-added bio cash rows
-            for idx, row_data in enumerate(rows, start=1):
-                purpose, amount, vendor, sold_by, created_at = row_data
-                self.bio_cash_table.setItem(idx, 0, self.make_cell(purpose))
-                self.bio_cash_table.setItem(idx, 1, self.make_cell(str(amount)))
-                self.bio_cash_table.setItem(idx, 2, self.make_cell(vendor))
-                self.bio_cash_table.setItem(idx, 3, self.make_cell(sold_by))
-                created_item = self.make_cell(created_at)
-                created_item.setFlags(created_item.flags() & ~Qt.ItemFlag.ItemIsEditable)
-                self.bio_cash_table.setItem(idx, 4, created_item)
-
-            self._update_bio_cash_total_display()            
-            # Load Cash Summary (try new schema first, fallback to original)
+            # Load Cash Summary first so daily surplus can use prev_day / terminal from DB
             cash_summary_data = None
             try:
                 cash_summary_data = self.db.fetchone("""
@@ -777,8 +827,7 @@ class MainWindow(QMainWindow):
                            total_daily_sell, total_cash_taken, cash_taken_by FROM daily_cash 
                     WHERE date = ?
                 """, (self.selected_date,))
-            except:
-                # Fallback to original schema (without date filter and terminal_cash)
+            except Exception:
                 try:
                     cash_summary_data = self.db.fetchone("""
                         SELECT prev_day_cash, total_cash_sell, total_card_sell,
@@ -788,35 +837,100 @@ class MainWindow(QMainWindow):
                     """)
                     if cash_summary_data:
                         cash_list = list(cash_summary_data)
-                        # Old schema fallback: no terminal_cash and no daily_terminal_sell
                         if len(cash_list) == 8:
-                            cash_list.insert(2, 0.0)  # Insert terminal_cash at position 2
-                            cash_list.insert(6, 0.0)  # Insert daily_terminal_sell before total_daily_sell
+                            cash_list.insert(2, 0.0)
+                            cash_list.insert(6, 0.0)
                         elif len(cash_list) == 9:
-                            cash_list.insert(6, 0.0)  # Insert daily_terminal_sell before total_daily_sell
+                            cash_list.insert(6, 0.0)
                         cash_summary_data = tuple(cash_list)
-                except:
+                except Exception:
                     cash_summary_data = None
-            
+
             if cash_summary_data:
                 has_data = True
                 self.cash_summary_table.setRowCount(1)
+                self._updating_cells = True
                 for col, value in enumerate(cash_summary_data):
-                    if col < 10:  # Ensure we don't exceed table columns
+                    if col < 10:
                         self.cash_summary_table.setItem(0, col, self.make_cell(str(value) if value is not None else ""))
+                self._updating_cells = False
             else:
                 self.cash_summary_table.setRowCount(1)
+                self._updating_cells = True
                 for col in range(10):
                     self.cash_summary_table.setItem(0, col, self.make_cell(""))
-            
-            # Show appropriate message
-            if has_data:
-                QMessageBox.information(self, "Data Loaded", 
-                    f"Successfully loaded all saved data for {self.selected_date}")
+                self._updating_cells = False
+
+            # Load Bio Cash entries (excluding the default daily surplus row)
+            bio_cash_data = None
+            try:
+                bio_cash_data = self.db.fetchall("""
+                    SELECT purpose, amount, vendor, sold_by, created_at FROM bio_cash
+                    WHERE date = ? AND purpose NOT IN (?, ?) ORDER BY id
+                """, (self.selected_date, DAILY_SURPLUS_PURPOSE, DAILY_SURPLUS_PURPOSE_LEGACY))
+            except Exception:
+                try:
+                    bio_cash_data = self.db.fetchall("""
+                        SELECT purpose, amount, vendor, sold_by FROM bio_cash
+                        ORDER BY id
+                    """)
+                except Exception:
+                    bio_cash_data = []
+
+            saved_surplus = self._fetch_saved_daily_surplus_from_db()
+            if saved_surplus is not None:
+                surplus_cash = saved_surplus
             else:
-                QMessageBox.information(self, "No Data Found", 
-                    f"No Prior Data is Saved on {self.selected_date}")
-                
+                surplus_cash = self._calculate_daily_surplus_cash()
+                if surplus_cash is None:
+                    surplus_cash = 0.0
+
+            rows = []
+            if bio_cash_data:
+                has_data = True
+                for data_row in bio_cash_data:
+                    if len(data_row) >= 5:
+                        purpose, amount, vendor, sold_by, created_at = data_row
+                    else:
+                        purpose, amount, vendor, sold_by = data_row
+                        created_at = ""
+                    if _is_daily_surplus_purpose(str(purpose)):
+                        continue
+                    rows.append((purpose, amount, vendor or "", sold_by or "", str(created_at) if created_at else ""))
+
+            self.bio_cash_table.setRowCount(max(1, 1 + len(rows)))
+
+            self.bio_cash_table.setItem(0, 0, self.make_cell(DAILY_SURPLUS_PURPOSE))
+            daily_surplus_item = self.make_cell(f"{surplus_cash:.2f}")
+            daily_surplus_item.setFlags(daily_surplus_item.flags() & ~Qt.ItemFlag.ItemIsEditable)
+            self.bio_cash_table.setItem(0, 1, daily_surplus_item)
+            self.bio_cash_table.setItem(0, 2, self.make_cell(""))
+            self.bio_cash_table.setItem(0, 3, self.make_cell(""))
+            created_item = self.make_cell("")
+            created_item.setFlags(created_item.flags() & ~Qt.ItemFlag.ItemIsEditable)
+            self.bio_cash_table.setItem(0, 4, created_item)
+
+            for idx, row_data in enumerate(rows, start=1):
+                purpose, amount, vendor, sold_by, created_at = row_data
+                self.bio_cash_table.setItem(idx, 0, self.make_cell(purpose))
+                self.bio_cash_table.setItem(idx, 1, self.make_cell(str(amount)))
+                self.bio_cash_table.setItem(idx, 2, self.make_cell(vendor))
+                self.bio_cash_table.setItem(idx, 3, self.make_cell(sold_by))
+                created_item_r = self.make_cell(created_at)
+                created_item_r.setFlags(created_item_r.flags() & ~Qt.ItemFlag.ItemIsEditable)
+                self.bio_cash_table.setItem(idx, 4, created_item_r)
+
+            self._update_bio_cash_total_display()
+
+            # Show appropriate message
+            if not silent:
+                if has_data:
+                    QMessageBox.information(self, "Data Loaded",
+                        f"Successfully loaded all saved data for {self.selected_date}")
+                else:
+                    QMessageBox.information(self, "No Data Found",
+                        f"No Prior Data is Saved on {self.selected_date}")
+
         except Exception as e:
             QMessageBox.critical(self, "Error", f"Error loading data: {e}")
             print(f"Error in _load_data_for_date: {e}")
@@ -943,7 +1057,26 @@ class MainWindow(QMainWindow):
 
     def save_bio_cash(self):
         try:
-            bio_added_sum = 0.0
+            # Persist default daily surplus row for this date (single canonical row)
+            surplus_item = self.bio_cash_table.item(0, 1)
+            surplus_val = 0.0
+            if surplus_item and surplus_item.text().strip():
+                try:
+                    surplus_val = float(surplus_item.text())
+                except ValueError:
+                    surplus_val = 0.0
+            self.db.safe_execute(
+                "DELETE FROM bio_cash WHERE date = ? AND purpose IN (?, ?)",
+                (self.selected_date, DAILY_SURPLUS_PURPOSE, DAILY_SURPLUS_PURPOSE_LEGACY),
+            )
+            self.db.safe_execute(
+                """
+                INSERT INTO bio_cash (date, purpose, amount, vendor, sold_by)
+                VALUES (?, ?, ?, '', '')
+                """,
+                (self.selected_date, DAILY_SURPLUS_PURPOSE, surplus_val),
+            )
+
             for row in range(self.bio_cash_table.rowCount()):
                 purpose = self.bio_cash_table.item(row, 0)
                 amount = self.bio_cash_table.item(row, 1)
@@ -951,18 +1084,15 @@ class MainWindow(QMainWindow):
                 sold_by = self.bio_cash_table.item(row, 3)
                 created_at_item = self.bio_cash_table.item(row, 4)
 
-                # Do not save the default Daily Cash Surplus row
-                if purpose and purpose.text().strip() == "Daily Cash Surplus":
+                if purpose and _is_daily_surplus_purpose(purpose.text().strip()):
                     continue
 
-                # Save only newly added rows that have not yet been persisted
                 if created_at_item and created_at_item.text().strip():
                     continue
 
                 if purpose and amount and purpose.text().strip() and amount.text().strip():
                     try:
                         amount_value = float(amount.text())
-                        bio_added_sum += amount_value
                         self.db.safe_execute("""
                             INSERT INTO bio_cash (date, purpose, amount, vendor, sold_by)
                             VALUES (?, ?, ?, ?, ?)
@@ -979,18 +1109,20 @@ class MainWindow(QMainWindow):
 
             self.db.conn.commit()
 
-            if bio_added_sum > 0:
-                current_total = self.db.fetchone("SELECT total_daily_sell FROM daily_cash WHERE date = ?", (self.selected_date,))
-                current_total_daily = float(current_total[0]) if current_total and current_total[0] is not None else 0.0
-                new_total_daily = current_total_daily + bio_added_sum
-                self.db.safe_execute("""
-                    INSERT INTO daily_cash (date, total_daily_sell)
-                    VALUES (?, ?)
-                    ON CONFLICT(date) DO UPDATE SET total_daily_sell = excluded.total_daily_sell
-                """, (self.selected_date, new_total_daily))
-                self.db.conn.commit()
+            td_item = self.cash_summary_table.item(0, 7)
+            if td_item and td_item.text().strip():
+                try:
+                    td_val = float(td_item.text())
+                    self.db.safe_execute("""
+                        INSERT INTO daily_cash (date, total_daily_sell)
+                        VALUES (?, ?)
+                        ON CONFLICT(date) DO UPDATE SET total_daily_sell = excluded.total_daily_sell
+                    """, (self.selected_date, td_val))
+                    self.db.conn.commit()
+                except ValueError:
+                    pass
 
-            self._load_data_for_date()
+            self._load_data_for_date(silent=True)
             self._update_bio_cash_total_display()
             QMessageBox.information(self, "Saved", "Bio cash saved successfully!")
         except Exception as e:
@@ -1001,10 +1133,15 @@ class MainWindow(QMainWindow):
 
     def cancel_bio_cash(self):
         row = self.bio_cash_table.currentRow()
+        if row <= 0:
+            return
         if row >= 0:
             self.bio_cash_table.removeRow(row)
+            self._update_bio_cash_total_display()
 
     def add_bio_cash_row(self):
+        if self.bio_cash_table.rowCount() < 1:
+            self._init_bio_cash_default_table_state()
         row = self.bio_cash_table.rowCount()
         self.bio_cash_table.insertRow(row)
         self.bio_cash_table.setItem(row, 0, self.make_cell(""))
@@ -1012,6 +1149,7 @@ class MainWindow(QMainWindow):
         self.bio_cash_table.setItem(row, 2, self.make_cell(""))
         self.bio_cash_table.setItem(row, 3, self.make_cell(""))
         self.bio_cash_table.setItem(row, 4, self.make_cell(""))
+        self._update_bio_cash_total_display()
 
 
     def save_cash_summary(self):
