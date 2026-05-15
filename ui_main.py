@@ -485,15 +485,25 @@ class MainWindow(QMainWindow):
             return 0.0
 
     def _apply_prev_day_cash_to_summary_table(self):
-        """Set Prev Day Cash (col 0) from DB; cell is read-only."""
+        """Set Prev Day Cash (col 0) from DB as the default value; user may edit it manually."""
         if self.cash_summary_table.rowCount() == 0:
             self.cash_summary_table.insertRow(0)
         val = self._fetch_prev_day_cash_from_db()
         self._updating_cells = True
         item = self.make_cell(f"{val:.2f}")
-        item.setFlags(item.flags() & ~Qt.ItemFlag.ItemIsEditable)
+        # Allow manual override of prev day cash
         self.cash_summary_table.setItem(0, 0, item)
         self._updating_cells = False
+
+    def _get_prev_day_cash_value(self) -> float:
+        """Return manual prev day cash if entered, otherwise use DB-derived auto value."""
+        item = self.cash_summary_table.item(0, 0)
+        if item and item.text().strip():
+            try:
+                return float(item.text())
+            except ValueError:
+                pass
+        return self._fetch_prev_day_cash_from_db()
 
     def _sync_bio_surplus_amount_cell(self, amount: float):
         """Update only the Daily Surplus Cash amount cell (row 0, col 1)."""
@@ -753,7 +763,7 @@ class MainWindow(QMainWindow):
         try:
             total_cash_sell_item = self.cash_summary_table.item(0, 1)
             total_card_item = self.cash_summary_table.item(0, 3)
-            prev_from_db = self._fetch_prev_day_cash_from_db()
+            prev_day_cash = self._get_prev_day_cash_value()
 
             def safe_float(item, default=0.0):
                 if item and item.text().strip():
@@ -763,7 +773,7 @@ class MainWindow(QMainWindow):
                         return default
                 return default
 
-            base_total_daily = (safe_float(total_cash_sell_item) - prev_from_db) + safe_float(total_card_item)
+            base_total_daily = (safe_float(total_cash_sell_item) - prev_day_cash) + safe_float(total_card_item)
             # Real-time: use table amounts for extra bio rows (not only DB-saved rows)
             extra_sum = self._table_bio_extra_amount_sum()
             total_with_bio = base_total_daily + extra_sum
@@ -796,10 +806,6 @@ class MainWindow(QMainWindow):
             if row != 0:
                 return
 
-            # Prev day cash is always derived from DB (prior date); cell is read-only
-            if column == 0:
-                return
-                
             # Get current values from the table
             total_cash_sell_item = self.cash_summary_table.item(0, 1)  # Total Cash Sell
             terminal_cash_item = self.cash_summary_table.item(0, 2)  # Terminal Cash
@@ -815,7 +821,7 @@ class MainWindow(QMainWindow):
                 return default
             
             # Get values
-            prev_day_cash = self._fetch_prev_day_cash_from_db()
+            prev_day_cash = self._get_prev_day_cash_value()
             total_cash_sell = get_float_value(total_cash_sell_item)
             terminal_cash = get_float_value(terminal_cash_item)
             total_card_sell = get_float_value(total_card_sell_item)
@@ -1502,8 +1508,7 @@ class MainWindow(QMainWindow):
                 (self.selected_date, DAILY_SURPLUS_PURPOSE, DAILY_SURPLUS_PURPOSE_LEGACY),
             ) is not None
 
-            prev_day_cash = self._fetch_prev_day_cash_from_db()
-            self._apply_prev_day_cash_to_summary_table()
+            prev_day_cash = self._get_prev_day_cash_value()
 
             total_cash_sell = self.cash_summary_table.item(0, 1)
             terminal_cash = self.cash_summary_table.item(0, 2)
