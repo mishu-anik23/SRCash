@@ -41,11 +41,14 @@ class DBManager:
             print(f"[DB ERROR] {e}\nSQL: {sql}\nParams: {params}")
             return False
 
+    def execute(self, sql: str, params: Tuple = ()):  # alias for safer compatibility
+        return self.safe_execute(sql, params)
+
     def fetchone(self, sql: str, params: Tuple = ()):
         self.cursor.execute(sql, params)
         return self.cursor.fetchone()
 
-    def fetchall(self, sql: str, params: Tuple = ()):
+    def fetchall(self, sql: str, params: Tuple = ()): 
         self.cursor.execute(sql, params)
         return self.cursor.fetchall()
 

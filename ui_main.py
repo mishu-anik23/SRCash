@@ -891,7 +891,7 @@ class MainWindow(QMainWindow):
         table_layout = QHBoxLayout()
         table_layout.addWidget(QLabel("Table:")); 
         table_combo = QComboBox()
-        table_combo.addItems(["daily_cash", "daily_expenses", "old_invoices", "bio_cash"])
+        table_combo.addItems(["ALL", "daily_cash", "daily_expenses", "old_invoices", "bio_cash"])
         table_layout.addWidget(table_combo)
         layout.addLayout(table_layout)
         
@@ -930,10 +930,14 @@ class MainWindow(QMainWindow):
             from_str = start_date.date().toString("yyyy-MM-dd")
             to_str = end_date.date().toString("yyyy-MM-dd")
             try:
-                count = self.db.fetchone(f"""
-                    SELECT COUNT(*) FROM {table} WHERE date BETWEEN ? AND ?
-                """, (from_str, to_str))[0]
-                info_label.setText(f"Rows to be deleted: {count}")
+                if table == "ALL":
+                    total = 0
+                    for t in ["daily_cash", "daily_expenses", "old_invoices", "bio_cash"]:
+                        total += self.db.fetchone(f"SELECT COUNT(*) FROM {t} WHERE date BETWEEN ? AND ?", (from_str, to_str))[0]
+                    info_label.setText(f"Rows to be deleted across all tables: {total}")
+                else:
+                    count = self.db.fetchone(f"SELECT COUNT(*) FROM {table} WHERE date BETWEEN ? AND ?", (from_str, to_str))[0]
+                    info_label.setText(f"Rows to be deleted: {count}")
             except Exception as e:
                 info_label.setText(f"Error counting rows: {str(e)}")
         
@@ -976,14 +980,21 @@ class MainWindow(QMainWindow):
             
             if reply == QMessageBox.StandardButton.Yes:
                 try:
-                    self.db.execute(f"""
-                        DELETE FROM {table} WHERE date BETWEEN ? AND ?
-                    """, (from_str, to_str))
-                    QMessageBox.information(
-                        dialog,
-                        "Success",
-                        f"Successfully deleted data from {table} between {from_str} and {to_str}."
-                    )
+                    if table == "ALL":
+                        for t in ["daily_cash", "daily_expenses", "old_invoices", "bio_cash"]:
+                            self.db.safe_execute(f"DELETE FROM {t} WHERE date BETWEEN ? AND ?", (from_str, to_str))
+                        QMessageBox.information(
+                            dialog,
+                            "Success",
+                            f"Successfully deleted data from all tables between {from_str} and {to_str}."
+                        )
+                    else:
+                        self.db.safe_execute(f"DELETE FROM {table} WHERE date BETWEEN ? AND ?", (from_str, to_str))
+                        QMessageBox.information(
+                            dialog,
+                            "Success",
+                            f"Successfully deleted data from {table} between {from_str} and {to_str}."
+                        )
                     dialog.accept()
                     # Refresh display
                     self._load_data_for_date(silent=True)
