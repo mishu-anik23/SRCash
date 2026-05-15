@@ -552,22 +552,32 @@ class MainWindow(QMainWindow):
         combo.addItem("Old Cash")
         combo.setProperty("cash_date", None)
         
-        # Style the combo box for visibility
+        # Style the combo box for visibility - more aggressive styling
         combo.setStyleSheet("""
             QComboBox {
                 color: black;
                 background-color: white;
+                border: 1px solid #cccccc;
+                padding: 2px;
+                min-width: 80px;
+            }
+            QComboBox:hover {
+                background-color: #f0f0f0;
             }
             QComboBox::drop-down {
                 border: none;
+                background-color: white;
             }
             QComboBox::down-arrow {
-                border: none;
+                width: 12px;
+                height: 8px;
             }
-            QAbstractItemView {
+            QComboBox QAbstractItemView {
                 color: black;
                 background-color: white;
                 selection-background-color: #0d47a1;
+                selection-color: white;
+                outline: none;
             }
         """)
 
@@ -590,6 +600,24 @@ class MainWindow(QMainWindow):
         date_edit.setCalendarPopup(True)
         date_edit.setDate(QDate.fromString(existing_date, "yyyy-MM-dd") if existing_date else QDate.currentDate())
         date_edit.setDisplayFormat("yyyy-MM-dd")
+        
+        # Style the date edit for visibility
+        date_edit.setStyleSheet("""
+            QDateEdit {
+                color: black;
+                background-color: white;
+                border: 1px solid #cccccc;
+                padding: 2px;
+            }
+            QDateEdit:hover {
+                background-color: #f0f0f0;
+            }
+            QDateEdit::drop-down {
+                border: none;
+                background-color: white;
+            }
+        """)
+        
         table.setCellWidget(row, col, date_edit)
 
     # --------- Denomination click ---------
