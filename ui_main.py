@@ -169,7 +169,7 @@ class MainWindow(QMainWindow):
         self.cash_summary_table = self._make_table([
             "Prev Day Cash", "Total Cash Sell", "Terminal Cash", "Total Card Sell",
             "Next Day Cash Note", "Next Day Cash Coin", "Daily Terminal Sell",
-            "Total Daily Sell", "Total Cash Taken", "Cash Taken By"
+            "Total Daily Bio", "Total Daily Sell", "Total Cash Taken", "Cash Taken By"
         ])
         self.cash_summary_table.cellChanged.connect(self._on_cash_summary_cell_changed)
 
@@ -785,7 +785,8 @@ class MainWindow(QMainWindow):
             if self.cash_summary_table.rowCount() == 0:
                 self.cash_summary_table.insertRow(0)
             self._updating_cells = True
-            self.cash_summary_table.setItem(0, 7, self.make_cell(f"{total_with_bio:.2f}"))
+            self.cash_summary_table.setItem(0, 7, self.make_cell(f"{extra_sum:.2f}"))
+            self.cash_summary_table.setItem(0, 8, self.make_cell(f"{total_with_bio:.2f}"))
             self._updating_cells = False
         except Exception as e:
             self._updating_cells = False
@@ -1176,13 +1177,21 @@ class MainWindow(QMainWindow):
                 self.cash_summary_table.setRowCount(1)
                 self._updating_cells = True
                 for col, value in enumerate(cash_summary_data):
-                    if col < 10:
+                    if col <= 6:
                         self.cash_summary_table.setItem(0, col, self.make_cell(str(value) if value is not None else ""))
+                    elif col == 7:
+                        # total_daily_sell from DB maps to new table column index 8
+                        self.cash_summary_table.setItem(0, 8, self.make_cell(str(value) if value is not None else ""))
+                    elif col == 8:
+                        self.cash_summary_table.setItem(0, 9, self.make_cell(str(value) if value is not None else ""))
+                    elif col == 9:
+                        self.cash_summary_table.setItem(0, 10, self.make_cell(str(value) if value is not None else ""))
+                self.cash_summary_table.setItem(0, 7, self.make_cell("0.00"))
                 self._updating_cells = False
             else:
                 self.cash_summary_table.setRowCount(1)
                 self._updating_cells = True
-                for col in range(10):
+                for col in range(11):
                     self.cash_summary_table.setItem(0, col, self.make_cell(""))
                 self._updating_cells = False
                 self._apply_prev_day_cash_to_summary_table()
@@ -1514,9 +1523,9 @@ class MainWindow(QMainWindow):
             total_card = self.cash_summary_table.item(0, 3)
             next_day_note = self.cash_summary_table.item(0, 4)
             next_day_coin = self.cash_summary_table.item(0, 5)
-            total_daily = self.cash_summary_table.item(0, 7)
-            total_taken = self.cash_summary_table.item(0, 8)
-            taken_by = self.cash_summary_table.item(0, 9)
+            total_daily = self.cash_summary_table.item(0, 8)
+            total_taken = self.cash_summary_table.item(0, 9)
+            taken_by = self.cash_summary_table.item(0, 10)
 
             # Helper function to safely convert to float
             def safe_float(item, default=0.0):
@@ -1542,7 +1551,8 @@ class MainWindow(QMainWindow):
                 base_total = calculation_result['total_daily_sell']
                 bio_sum = self._calculate_bio_cash_sum()
                 total_with_bio = base_total + bio_sum
-                self.cash_summary_table.setItem(0, 7, self.make_cell(str(total_with_bio)))
+                self.cash_summary_table.setItem(0, 7, self.make_cell(str(bio_sum)))
+                self.cash_summary_table.setItem(0, 8, self.make_cell(str(total_with_bio)))
                 
                 # Show the daily surplus cash in a message
                 QMessageBox.information(self, "Calculated Values", 
