@@ -1185,8 +1185,7 @@ class MainWindow(QMainWindow):
                 for col in range(10):
                     self.cash_summary_table.setItem(0, col, self.make_cell(""))
                 self._updating_cells = False
-
-            self._apply_prev_day_cash_to_summary_table()
+                self._apply_prev_day_cash_to_summary_table()
 
             # Load Bio Cash entries (excluding the default daily surplus row)
             bio_cash_data = None
