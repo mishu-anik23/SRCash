@@ -885,7 +885,7 @@ class MainWindow(QMainWindow):
         dialog.setWindowTitle("Reset Data")
         dialog.setGeometry(100, 100, 500, 350)
         
-        layout = QVBoxLayout()
+        layout = QVBoxLayout(dialog)
         
         # Table selection
         table_layout = QHBoxLayout()
