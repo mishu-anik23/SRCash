@@ -774,10 +774,9 @@ class MainWindow(QMainWindow):
                 return default
 
             base_total_daily = (safe_float(total_cash_sell_item) - prev_day_cash) + safe_float(total_card_item)
-            # Real-time: use table amounts for extra bio rows (not only DB-saved rows)
-            extra_sum = self._table_bio_extra_amount_sum()
-            total_with_bio = base_total_daily + extra_sum
+            # Real-time: use table amounts for extra bio rows plus the surplus row
             total_bio = self._table_total_bio_cash()
+            total_with_bio = base_total_daily + total_bio
 
             if hasattr(self, "btn_total_bio_cash"):
                 self.btn_total_bio_cash.setText(f"€ {total_bio:.2f}")
@@ -785,7 +784,7 @@ class MainWindow(QMainWindow):
             if self.cash_summary_table.rowCount() == 0:
                 self.cash_summary_table.insertRow(0)
             self._updating_cells = True
-            self.cash_summary_table.setItem(0, 7, self.make_cell(f"{extra_sum:.2f}"))
+            self.cash_summary_table.setItem(0, 7, self.make_cell(f"{total_bio:.2f}"))
             self.cash_summary_table.setItem(0, 8, self.make_cell(f"{total_with_bio:.2f}"))
             self._updating_cells = False
         except Exception as e:
@@ -1549,9 +1548,9 @@ class MainWindow(QMainWindow):
                 # Update the UI with calculated values
                 self.cash_summary_table.setItem(0, 6, self.make_cell(str(calculation_result['daily_terminal_sell'])))
                 base_total = calculation_result['total_daily_sell']
-                bio_sum = self._calculate_bio_cash_sum()
-                total_with_bio = base_total + bio_sum
-                self.cash_summary_table.setItem(0, 7, self.make_cell(str(bio_sum)))
+                total_bio = self._table_total_bio_cash()
+                total_with_bio = base_total + total_bio
+                self.cash_summary_table.setItem(0, 7, self.make_cell(str(total_bio)))
                 self.cash_summary_table.setItem(0, 8, self.make_cell(str(total_with_bio)))
                 
                 # Show the daily surplus cash in a message
@@ -1564,8 +1563,8 @@ class MainWindow(QMainWindow):
             daily_terminal_sell_value = terminal_cash_value + total_card_sell
             total_with_bio = None
             if calculation_result:
-                bio_sum = self._calculate_bio_cash_sum()
-                total_with_bio = calculation_result['total_daily_sell'] + bio_sum
+                total_bio = self._table_total_bio_cash()
+                total_with_bio = calculation_result['total_daily_sell'] + total_bio
             self.db.safe_execute("""
                 INSERT OR REPLACE INTO daily_cash
                 (date, prev_day_cash, total_cash_sell, terminal_cash, total_card_sell,
