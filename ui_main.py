@@ -932,7 +932,7 @@ class MainWindow(QMainWindow):
             try:
                 if table == "ALL":
                     total = 0
-                    for t in ["daily_cash", "daily_expenses", "old_invoices", "bio_cash"]:
+                    for t in ["daily_cash", "daily_expenses", "old_invoices", "bio_cash", "daily_cash_count"]:
                         total += self.db.fetchone(f"SELECT COUNT(*) FROM {t} WHERE date BETWEEN ? AND ?", (from_str, to_str))[0]
                     info_label.setText(f"Rows to be deleted across all tables: {total}")
                 else:
@@ -981,7 +981,7 @@ class MainWindow(QMainWindow):
             if reply == QMessageBox.StandardButton.Yes:
                 try:
                     if table == "ALL":
-                        for t in ["daily_cash", "daily_expenses", "old_invoices", "bio_cash"]:
+                        for t in ["daily_cash", "daily_expenses", "old_invoices", "bio_cash", "daily_cash_count"]:
                             self.db.safe_execute(f"DELETE FROM {t} WHERE date BETWEEN ? AND ?", (from_str, to_str))
                         QMessageBox.information(
                             dialog,
