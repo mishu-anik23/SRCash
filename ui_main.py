@@ -259,8 +259,26 @@ class MainWindow(QMainWindow):
             """)
         btn_stats.clicked.connect(self._open_stats)
         
+        # Add Reset Data button
+        btn_reset = QPushButton("Reset Data")
+        btn_reset.setStyleSheet("""
+                QPushButton {
+                    background-color: #D32F2F;
+                    font-weight: bold;
+                    font-size: 16px;
+                    color: white;
+                    padding: 10px;
+                    border-radius: 5px;
+                }
+                QPushButton:hover {
+                    background-color: #C62828;
+                }
+            """)
+        btn_reset.clicked.connect(self._open_reset_dialog)
+        
         buttons_layout.addWidget(btn_load_data)
         buttons_layout.addWidget(btn_stats)
+        buttons_layout.addWidget(btn_reset)
         buttons_layout.addStretch()  # Push buttons to the right
 
         main_layout = QVBoxLayout()
@@ -860,6 +878,129 @@ class MainWindow(QMainWindow):
     def _open_stats(self):
         self.stats_window = StatWindow(self.db)
         self.stats_window.show()
+    
+    def _open_reset_dialog(self):
+        """Open a dialog to reset/delete data for a selected table and date range."""
+        dialog = QDialog(self)
+        dialog.setWindowTitle("Reset Data")
+        dialog.setGeometry(100, 100, 500, 350)
+        
+        layout = QVBoxLayout()
+        
+        # Table selection
+        table_layout = QHBoxLayout()
+        table_layout.addWidget(QLabel("Table:")); 
+        table_combo = QComboBox()
+        table_combo.addItems(["daily_cash", "daily_expenses", "old_invoices", "bio_cash"])
+        table_layout.addWidget(table_combo)
+        layout.addLayout(table_layout)
+        
+        # Date range selection
+        date_layout = QHBoxLayout()
+        date_layout.addWidget(QLabel("From Date:"))
+        start_date = QDateEdit()
+        start_date.setDate(QDate.currentDate().addMonths(-1))
+        start_date.setCalendarPopup(True)
+        date_layout.addWidget(start_date)
+        
+        date_layout.addWidget(QLabel("To Date:"))
+        end_date = QDateEdit()
+        end_date.setDate(QDate.currentDate())
+        end_date.setCalendarPopup(True)
+        date_layout.addWidget(end_date)
+        layout.addLayout(date_layout)
+        
+        # Warning message
+        warning_label = QLabel(
+            "⚠️  WARNING: This action will permanently delete all selected data in the chosen table "
+            "for the specified date range. This action cannot be undone!"
+        )
+        warning_label.setWordWrap(True)
+        warning_label.setStyleSheet("color: red; font-weight: bold; padding: 10px;")
+        layout.addWidget(warning_label)
+        
+        # Row count info
+        info_label = QLabel("")
+        info_label.setStyleSheet("color: #1976D2; padding: 5px;")
+        layout.addWidget(info_label)
+        
+        def update_row_count():
+            """Update the number of rows that will be deleted."""
+            table = table_combo.currentText()
+            from_str = start_date.date().toString("yyyy-MM-dd")
+            to_str = end_date.date().toString("yyyy-MM-dd")
+            try:
+                count = self.db.fetchone(f"""
+                    SELECT COUNT(*) FROM {table} WHERE date BETWEEN ? AND ?
+                """, (from_str, to_str))[0]
+                info_label.setText(f"Rows to be deleted: {count}")
+            except Exception as e:
+                info_label.setText(f"Error counting rows: {str(e)}")
+        
+        table_combo.currentTextChanged.connect(update_row_count)
+        start_date.dateChanged.connect(update_row_count)
+        end_date.dateChanged.connect(update_row_count)
+        update_row_count()
+        
+        # Buttons
+        button_layout = QHBoxLayout()
+        confirm_btn = QPushButton("Delete Data")
+        confirm_btn.setStyleSheet("""
+            QPushButton {
+                background-color: #D32F2F;
+                color: white;
+                font-weight: bold;
+                padding: 8px;
+                border-radius: 3px;
+            }
+        """)
+        cancel_btn = QPushButton("Cancel")
+        cancel_btn.clicked.connect(dialog.reject)
+        
+        def perform_reset():
+            """Perform the actual data deletion."""
+            table = table_combo.currentText()
+            from_str = start_date.date().toString("yyyy-MM-dd")
+            to_str = end_date.date().toString("yyyy-MM-dd")
+            
+            # Final confirmation
+            reply = QMessageBox.question(
+                dialog,
+                "Final Confirmation",
+                f"Are you absolutely sure you want to delete all data from '{table}' \n"
+                f"between {from_str} and {to_str}?\n\n"
+                f"This action cannot be undone!",
+                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+                QMessageBox.StandardButton.No
+            )
+            
+            if reply == QMessageBox.StandardButton.Yes:
+                try:
+                    self.db.execute(f"""
+                        DELETE FROM {table} WHERE date BETWEEN ? AND ?
+                    """, (from_str, to_str))
+                    QMessageBox.information(
+                        dialog,
+                        "Success",
+                        f"Successfully deleted data from {table} between {from_str} and {to_str}."
+                    )
+                    dialog.accept()
+                    # Refresh display
+                    self._load_data_for_date(silent=True)
+                except Exception as e:
+                    QMessageBox.critical(
+                        dialog,
+                        "Error",
+                        f"Failed to delete data: {str(e)}"
+                    )
+        
+        confirm_btn.clicked.connect(perform_reset)
+        button_layout.addWidget(confirm_btn)
+        button_layout.addWidget(cancel_btn)
+        layout.addLayout(button_layout)
+        
+        layout.addStretch()
+        dialog.exec()
     
     def _load_data_for_date(self, silent=False):
         """Load all saved data for the selected date. If silent=True, do not show summary message boxes."""
